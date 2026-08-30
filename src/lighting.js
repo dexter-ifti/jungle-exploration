@@ -121,10 +121,10 @@ export class JungleLighting {
     // Very dim point lights that follow the trail, creating the dappled
     // "light pools" effect under canopy gaps.
     this.dapples = [];
-    for (let i = 0; i < 22; i++) {
-      const t = (i + 0.5) / 22;
+    for (let i = 0; i < 14; i++) {
+      const t = (i + 0.5) / 14;
       const p = TRAIL.getPoint(t);
-      const dapple = new THREE.PointLight(0xfff0c0, 0.25, 14, 1.4);
+      const dapple = new THREE.PointLight(0xfff0c0, 0.18, 12, 1.4);
       dapple.position.set(p.x + (N.noise2(t * 13, 7) - 0.5) * 3, terrainHeight(p.x, p.z) + 2.5, p.z + (N.noise2(t * 7, 19) - 0.5) * 3);
       this.dapples.push(dapple);
       this.group.add(dapple);
@@ -151,7 +151,7 @@ export class JungleLighting {
     // toward the sun direction.
     const sunDir = new THREE.Vector3().subVectors(this.sun.target.position, this.sun.position).normalize();
     const rays = [];
-    const N_RAYS = 12;
+    const N_RAYS = 10;
     for (let i = 0; i < N_RAYS; i++) {
       // ray position scattered around the trail
       const t = (i + 0.5) / N_RAYS;
@@ -190,7 +190,7 @@ export class JungleLighting {
   _buildParticles() {
     // 600 small bright motes scattered around the canopy area,
     // each with a slight drift. They twinkle on/off over time.
-    const N_PARTICLES = 600;
+    const N_PARTICLES = 400;
     const positions = new Float32Array(N_PARTICLES * 3);
     const seeds = new Float32Array(N_PARTICLES);
     for (let i = 0; i < N_PARTICLES; i++) {
