@@ -662,21 +662,29 @@ function pickSpecies(rng) {
   return SPECIES[SPECIES.length - 1];
 }
 
-// ---------- FERN (understory): fronds radiating from a single base ----------
+// ---------- FERN (understory): fronds that curve outward and upward ----------
 function buildFern(rng) {
-  const fronds = 5 + Math.floor(rng() * 6);
+  const fronds = 6 + Math.floor(rng() * 5);
   const geos = [];
   for (let i = 0; i < fronds; i++) {
     const a = (i / fronds) * Math.PI * 2 + rng() * 0.4;
-    const len = 0.6 + rng() * 0.8;
-    const segs = 6;
+    const len = 0.7 + rng() * 0.8;
+    const segs = 7;
     for (let s = 0; s < segs; s++) {
       const ts = s / segs;
-      const w = 0.08 + rng() * 0.04;
+      const w = 0.10 + rng() * 0.05;
       const card = leafCardGeometry(w, len * (1 - ts * 0.25));
-      const droop = -Math.pow(ts, 1.1) * 0.35;
-      card.translate(0, droop, ts * len);
-      card.rotateX(-Math.PI / 2 + (1 - ts) * 0.5);
+      // Place fronds at an upward-outward angle (45-65° from horizontal)
+      // so they read as upright ferns from eye level, not flat ground
+      // cover. droop and angle change along the frond.
+      const droopY = -Math.pow(ts, 1.0) * 0.15;
+      const reach = ts * len;
+      card.translate(0, droopY, reach);
+      // start at ~50° up, gradually flatten to ~10° up
+      const startAngle = -Math.PI * 0.35;
+      const endAngle   = -Math.PI * 0.05;
+      const ang = startAngle + (endAngle - startAngle) * ts;
+      card.rotateX(ang);
       card.rotateY(a);
       geos.push(card);
     }
@@ -701,8 +709,10 @@ function buildBroadleafHerb(rng) {
     const len = 0.5 + rng() * 0.4;
     const w = 0.2 + rng() * 0.1;
     const card = leafCardGeometry(w, len);
+    // broad leaves angled up (30-60° from horizontal) so they're
+    // visible from eye level, not flat on the ground.
     card.translate(0, 0, len * 0.5);
-    card.rotateX(-Math.PI / 2 + (rng() - 0.5) * 0.3);
+    card.rotateX(-Math.PI * 0.3 + (rng() - 0.5) * 0.25);
     card.rotateY(a);
     geos.push(card);
   }
@@ -1064,17 +1074,18 @@ function scatterUnderstory(scene, opts) {
 export function populateVegetation(scene) {
   // trees
   const treeCount = scatterTrees(scene, {
-    minRadius: 3.0,
-    treeSpacing: 2.6,
+    minRadius: 2.5,
+    treeSpacing: 2.3,
     density: 1.0,
-    maxCount: 380,
+    maxCount: 350,
   });
-  // understory
+  // understory - dense because the camera is at eye-level and ferns
+  // are the most reliable "jungle" read at ground level.
   scatterUnderstory(scene, {
-    fernCount: 450,
-    herbCount: 320,
-    logCount: 80,
-    mossCount: 220,
+    fernCount: 700,
+    herbCount: 400,
+    logCount: 90,
+    mossCount: 260,
     vineCount: 0,
   });
   return { treeCount };

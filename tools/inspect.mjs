@@ -1,39 +1,55 @@
-// Test with no caching
+// Look at the scene from a closer angle to verify ferns/herbs exist
 import { chromium } from 'playwright';
 
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--enable-unsafe-swiftshader'] });
-const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, bypassCSP: true });
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
 const page = await ctx.newPage();
 page.on('pageerror', e => console.log('PAGEERROR:', e.message));
-page.on('console', m => { if (m.type() === 'error') console.log('CONSOLE-ERR:', m.text().slice(0, 200)); });
-await ctx.clearCookies();
-await page.goto('http://127.0.0.1:5173/?nocache=' + Date.now(), { waitUntil: 'networkidle' });
-await page.waitForTimeout(6000);
+await page.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
+await page.waitForTimeout(5000);
 await page.waitForFunction(() => !!window.__scene, { timeout: 5000 }).catch(() => {});
 
-const info = await page.evaluate(() => {
-  if (!window.__scene) return { err: 'no scene' };
+// Walk to t=0.18
+await page.evaluate(() => window.__setT(0.18));
+await page.waitForTimeout(800);
+
+// Find a fern near the trail at the current t
+const camAndFern = await page.evaluate(() => {
   const scene = window.__scene;
-  const samples = [];
-  for (const c of scene.children) {
-    if (c.isGroup && c.children.length >= 2) {
-      const crown = c.children[1];
-      const p = crown.geometry.attributes.position;
-      let xmin=Infinity, xmax=-Infinity, ymin=Infinity, ymax=-Infinity, zmin=Infinity, zmax=-Infinity;
-      for (let i = 0; i < p.count; i++) {
-        const x=p.getX(i), y=p.getY(i), z=p.getZ(i);
-        if(x<xmin)xmin=x; if(x>xmax)xmax=x;
-        if(y<ymin)ymin=y; if(y>ymax)ymax=y;
-        if(z<zmin)zmin=z; if(z>zmax)zmax=z;
-      }
-      samples.push({
-        count: p.count,
-        size: { x:(xmax-xmin).toFixed(2), y:(ymax-ymin).toFixed(2), z:(zmax-zmin).toFixed(2) },
-      });
-      if (samples.length >= 6) break;
+  // Find a small mesh (likely fern/herb) near the trail at the camera position
+  // First get camera position from a known t
+  // Actually we just look for any small mesh close to the trail at z=6
+  const cam = window.__camera;
+  const cp = cam.position;
+  // look for ferns
+  const ferns = [];
+  scene.traverse(o => {
+    if (!o.isMesh) return;
+    if (o.material?.type !== 'MeshLambertMaterial') return;
+    const bb = o.geometry.boundingBox;
+    if (!bb) return;
+    const sz = bb.max.y - bb.min.y;
+    if (sz < 2 && o.position.y < 1.5) {
+      const dist = Math.hypot(o.position.x - cp.x, o.position.z - cp.z);
+      ferns.push({ pos: o.position.toArray().map(v => +v.toFixed(1)), size: +sz.toFixed(2), dist: +dist.toFixed(1) });
     }
-  }
-  return { total: 340, first6: samples };
+  });
+  ferns.sort((a, b) => a.dist - b.dist);
+  return { camPos: cp.toArray().map(v => +v.toFixed(1)), nearbyFerns: ferns.slice(0, 5) };
 });
-console.log(JSON.stringify(info, null, 2));
+console.log(JSON.stringify(camAndFern, null, 2));
+
+// Move camera near a fern and screenshot
+const fern = camAndFern.nearbyFerns[0];
+if (fern) {
+  await page.evaluate((f) => {
+    const cam = window.__camera;
+    cam.position.set(f.pos[0], 1.7, f.pos[2] - 1.5);
+    cam.lookAt(f.pos[0], 0.4, f.pos[2]);
+  }, fern);
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: 'renders_s2/fern_closeup.png' });
+  console.log('saved fern_closeup.png');
+}
+
 await browser.close();
