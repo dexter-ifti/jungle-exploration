@@ -102,9 +102,11 @@ function makeCanopyMaterial(variant) {
     flatShading: true,    // gives a faceted "leaf cluster" look
     // Provisional: stronger emissive so the back-of-canopy side
     // (the side facing the camera) is still readable as green when
-    // it's in the sun's shadow. System 3 lighting can then refine.
-    emissive: new THREE.Color(0x1d3416),
-    emissiveIntensity: 0.5,
+    // it's in the sun's shadow. The emissive also gives a subtle
+    // backlit "subsurface" look at canopy edges that mimics the
+    // translucency of real backlit leaves.
+    emissive: new THREE.Color(0x2a4a1e),
+    emissiveIntensity: 0.7,
   });
 }
 const CANOPY_MATS = [makeCanopyMaterial(0), makeCanopyMaterial(1)];

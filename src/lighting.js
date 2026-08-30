@@ -207,9 +207,11 @@ export class JungleLighting {
   }
 
   _buildParticles() {
-    // 600 small bright motes scattered around the canopy area,
-    // each with a slight drift. They twinkle on/off over time.
-    const N_PARTICLES = 400;
+    // 900 small bright motes scattered around the canopy area, each
+    // with a slight drift. They twinkle on/off over time. Larger and
+    // brighter than the previous 400/0.12/0.55 setup so the
+    // screen-space god rays have something to scatter through.
+    const N_PARTICLES = 900;
     const positions = new Float32Array(N_PARTICLES * 3);
     const seeds = new Float32Array(N_PARTICLES);
     for (let i = 0; i < N_PARTICLES; i++) {
@@ -218,7 +220,7 @@ export class JungleLighting {
       const p = TRAIL.getPoint(t);
       const offX = (N.noise2(i * 0.31, 7) - 0.5) * 30;
       const offZ = (N.noise2(i * 0.41, 13) - 0.5) * 30;
-      const y = terrainHeight(p.x + offX, p.z + offZ) + 0.5 + N.noise2(i * 0.7, 17) * 6;
+      const y = terrainHeight(p.x + offX, p.z + offZ) + 0.5 + N.noise2(i * 0.7, 17) * 8;
       positions[i * 3]     = p.x + offX;
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = p.z + offZ;
@@ -227,13 +229,14 @@ export class JungleLighting {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geo.setAttribute('seed', new THREE.BufferAttribute(seeds, 1));
-    // tiny billboard material
+    // tiny billboard material — larger and brighter so the motes
+    // catch the god rays and read as airborne dust catching sunlight
     const mat = new THREE.PointsMaterial({
-      color: 0xfff4d0,
-      size: 0.12,
+      color: 0xfff0c8,
+      size: 0.22,
       sizeAttenuation: true,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.78,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       fog: true,
