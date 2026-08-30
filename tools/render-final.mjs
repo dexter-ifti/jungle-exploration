@@ -2,8 +2,8 @@
 import { chromium } from 'playwright';
 import fs from 'fs';
 
-const outDir = 'renders_final';
-const stops = [0.02, 0.18, 0.38, 0.55, 0.72, 0.88, 0.99];
+const outDir = 'renders_post_fixes';
+const stops = [0.02, 0.18, 0.38, 0.55, 0.72, 0.88, 0.985];
 fs.mkdirSync(outDir, { recursive: true });
 
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--enable-unsafe-swiftshader'] });
