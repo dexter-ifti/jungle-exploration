@@ -98,13 +98,13 @@ const LEAF_TEXTURES = [makeLeafTexture(0), makeLeafTexture(1)];
 function makeCanopyMaterial(variant) {
   return new THREE.MeshLambertMaterial({
     vertexColors: true,
-    side: THREE.FrontSide,
+    side: THREE.DoubleSide,
     flatShading: true,    // gives a faceted "leaf cluster" look
-    // Provisional: small emissive so shadowed canopy undersides don't
-    // go fully black under the placeholder System 1 lighting. System 3
-    // (real canopy light shafts) will let this drop to zero.
-    emissive: new THREE.Color(0x152410),
-    emissiveIntensity: 0.35,
+    // Provisional: stronger emissive so the back-of-canopy side
+    // (the side facing the camera) is still readable as green when
+    // it's in the sun's shadow. System 3 lighting can then refine.
+    emissive: new THREE.Color(0x1d3416),
+    emissiveIntensity: 0.5,
   });
 }
 const CANOPY_MATS = [makeCanopyMaterial(0), makeCanopyMaterial(1)];
@@ -981,7 +981,11 @@ function scatterTrees(scene, opts) {
       );
       crownMesh = new THREE.Mesh(tree.crown, cm);
       crownMesh.castShadow = true;
-      crownMesh.receiveShadow = true;
+      // canopies are dense meshes that would self-shadow heavily with
+      // the current shadow setup, making them look like dark blobs.
+      // Disable receiveShadow so the lit side stays bright even where
+      // the canopy's own top would cast on its own sides.
+      crownMesh.receiveShadow = false;
     }
     const group = new THREE.Group();
     group.add(trunkMesh);

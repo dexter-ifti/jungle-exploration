@@ -339,36 +339,17 @@ export async function buildScene() {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.85;
+  renderer.toneMappingExposure = 0.95;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   document.body.appendChild(renderer.domElement);
+  // expose renderer on scene so modules can tune exposure etc.
+  scene.userData.renderer = renderer;
 
   const camera = new THREE.PerspectiveCamera(66, innerWidth / innerHeight, 0.1, 900);
 
-  // provisional lighting so System 1 renders legibly (System 3 replaces this)
-  const hemi = new THREE.HemisphereLight(0xcfe0d8, 0x3a4030, 1.6);
-  scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xfff2dd, 3.4);
-  sun.position.set(60, 110, -40);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -160; sun.shadow.camera.right = 160;
-  sun.shadow.camera.top = 160; sun.shadow.camera.bottom = -160;
-  sun.shadow.camera.far = 500;
-  sun.shadow.bias = -0.0004;
-  scene.add(sun);
-  // simple procedural sky dome so the horizon isn't a void
-  const skyGeo = new THREE.SphereGeometry(800, 24, 16);
-  const skyCv = document.createElement('canvas'); skyCv.width = 4; skyCv.height = 128;
-  const sctx = skyCv.getContext('2d');
-  const grad = sctx.createLinearGradient(0, 0, 0, 128);
-  grad.addColorStop(0, '#9fc3d8'); grad.addColorStop(0.55, '#c2d4c6'); grad.addColorStop(1, '#aebfae');
-  sctx.fillStyle = grad; sctx.fillRect(0, 0, 4, 128);
-  const skyTex = new THREE.CanvasTexture(skyCv);
-  skyTex.colorSpace = THREE.SRGBColorSpace;
-  const sky = new THREE.Mesh(skyGeo, new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false }));
-  scene.add(sky);
-  scene.fog = new THREE.FogExp2(0xbccab8, 0.0055);
+  // ----- System 3: lighting and atmosphere (replaces the placeholder) -----
+  const { JungleLighting } = await import('./lighting.js');
+  const lighting = new JungleLighting(scene);
 
   // ----- terrain mesh -----
   const size = WORLD.size, seg = WORLD.seg;
@@ -485,5 +466,5 @@ export async function buildScene() {
   const { populateVegetation } = await import('./vegetation.js');
   populateVegetation(scene);
 
-  return { scene, camera, renderer, ground };
+  return { scene, camera, renderer, ground, lighting };
 }
