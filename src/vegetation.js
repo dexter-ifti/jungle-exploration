@@ -284,6 +284,26 @@ function mergeLite(geos) {
 // organic, irregular shape that reads as a mass of leaf bunches rather
 // than a single sphere.
 function buildCanopy(rng, cx, cy, cz, radius, density, variant) {
+  // Stack TWO cluster layers at the canopy center, each with its own
+  // noise displacement and offset. The two-layer stack reads as a
+  // heavy, bushy mass at any distance and breaks the single-sphere
+  // silhouette that the original icosahedron approach produced.
+  const a = buildCanopyCluster(rng, cx, cy, cz, radius, density, variant);
+  // second cluster slightly offset and at a different size — this is
+  // the "stack a second smaller blob on every tree" fix
+  const offX = (rng() - 0.5) * radius * 0.4;
+  const offY = (rng() - 0.4) * radius * 0.25;
+  const offZ = (rng() - 0.5) * radius * 0.4;
+  const r2 = radius * (0.55 + rng() * 0.3);
+  const b = buildCanopyCluster(rng, cx + offX, cy + offY, cz + offZ, r2,
+                                Math.floor(density * 0.7), variant);
+  const merged = mergeLite([a, b]);
+  merged.computeBoundingSphere();
+  merged.computeBoundingBox();
+  return merged;
+}
+
+function buildCanopyCluster(rng, cx, cy, cz, radius, density, variant) {
   const blobs = [];
   const blobCount = 3 + Math.floor(rng() * 4);  // 3-6 blobs
   // the dominant central blob
@@ -348,6 +368,77 @@ function buildCanopy(rng, cx, cy, cz, radius, density, variant) {
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geos.push(g);
   }
+  const merged = mergeLite(geos);
+  merged.computeBoundingSphere();
+  merged.computeBoundingBox();
+  return merged;
+}
+
+// ---------- leaf-quilt: many small flat-shaded triangle clusters
+// scattered over a canopy. Each "leaf bunch" is a small 6-vert hex
+// with vertex colors, merged with the parent canopy. The result reads
+// as a mass of individual leaf bunches poking out of the canopy,
+// instead of a single blob silhouette.
+function buildLeafQuilt(rng, cx, cy, cz, radius, count, hue) {
+  const geos = [];
+  for (let i = 0; i < count; i++) {
+    // sample a point on a sphere shell, biased outward
+    const u = rng(), v = rng(), w = rng();
+    const theta = u * Math.PI * 2;
+    const phi = Math.acos(2 * v - 1);
+    const r = radius * (0.7 + 0.55 * w);
+    const px = cx + r * Math.sin(phi) * Math.cos(theta);
+    const py = cy + r * Math.cos(phi) * 0.85;        // squash vertically
+    const pz = cz + r * Math.sin(phi) * Math.sin(theta);
+    // outward direction (toward the sphere normal at this point)
+    const dx = (px - cx) / r, dy = (py - cy) / r * 0.85, dz = (pz - cz) / r;
+    // build an orthonormal frame around (dx, dy, dz)
+    let t1x, t1z;
+    if (Math.abs(dy) < 0.9) {
+      t1x = -dz; t1z = dx;
+    } else {
+      t1x = 1; t1z = 0;
+    }
+    const t1Len = Math.hypot(t1x, t1z) || 1;
+    const t1xn = t1x / t1Len, t1zn = t1z / t1Len;
+    // t2 = normal cross t1
+    const t2x = dy * t1zn;
+    const t2y = -dy * t1xn;
+    const t2z = dy * t1xn - 0;
+    // build a 6-vertex hex leaf-cluster
+    const leafSize = 0.35 + rng() * 0.45;
+    const verts = [];
+    const colors = [];
+    const indices = [];
+    const nSeg = 5;
+    for (let k = 0; k <= nSeg; k++) {
+      const a = (k / nSeg) * Math.PI * 2 + rng() * 0.3;
+      const offset = leafSize * (0.7 + rng() * 0.4);
+      // push outward in the local plane
+      const lx = px + (Math.cos(a) * t1xn * offset) + (Math.sin(a) * t2x * offset);
+      const ly = py + (Math.sin(a) * t2y * offset) + dy * offset * 0.4;
+      const lz = pz + (Math.cos(a) * t1zn * offset) + (Math.sin(a) * t2z * offset);
+      verts.push(lx, ly, lz);
+      // center vertex is slightly darker (mid-rib)
+      const isCenter = k === 0;
+      const g = (0.32 + rng() * 0.28 + hue * 0.1) * (isCenter ? 0.78 : 1);
+      const r2 = (0.14 + rng() * 0.12) * (isCenter ? 0.75 : 1);
+      const b = (0.10 + rng() * 0.10) * (isCenter ? 0.75 : 1);
+      colors.push(r2, g, b);
+    }
+    // fan from centre to outer vertices
+    for (let k = 1; k < nSeg; k++) {
+      indices.push(0, k, k + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
+    g.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1));
+    g.computeVertexNormals();
+    g.computeBoundingSphere();
+    geos.push(g);
+  }
+  // merge into one geometry and return
   const merged = mergeLite(geos);
   merged.computeBoundingSphere();
   merged.computeBoundingBox();
@@ -1109,6 +1200,22 @@ function scatterTrees(scene, opts) {
       // the canopy's own top would cast on its own sides.
       crownMesh.receiveShadow = false;
       group.add(crownMesh);
+      // leaf-quilt overlay: many small flat-shaded triangles poking
+      // out of the canopy surface. Breaks the icosahedron silhouette
+      // and adds a real "leaf bunches" reading at any distance.
+      if (tree.height > 0.5) {
+        crownMesh.geometry.computeBoundingSphere();
+        const bs = crownMesh.geometry.boundingSphere;
+        const quiltR = Math.min(bs.radius * 1.15, 4.0);
+        // match the canopy material's hue so the quilt blends in
+        const hueShift = cm.color.r;
+        const quilt = buildLeafQuilt(localRng, bs.center.x, bs.center.y, bs.center.z,
+                                     quiltR, 60, hueShift);
+        const quiltMesh = new THREE.Mesh(quilt, cm);
+        quiltMesh.castShadow = false;
+        quiltMesh.receiveShadow = false;
+        group.add(quiltMesh);
+      }
     }
     // a small random rotation around Y so silhouettes never repeat
     group.rotation.y = localRng() * Math.PI * 2;

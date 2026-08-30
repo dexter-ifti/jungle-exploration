@@ -28,11 +28,17 @@ window.__setT = v => { t = Math.min(Math.max(v, 0.0), 0.985); };
 
 // player walks the trail spline with head-bob-free smooth motion
 let t = 0.02;
+let strafe = 0;          // lateral offset perpendicular to the path, in metres
+const STRAFE_MAX = 4.0;  // clip so the player can't run off the side of the trail
 const keys = {};
 addEventListener('keydown', e => keys[e.code] = true);
 addEventListener('keyup', e => keys[e.code] = false);
 
 const clock = new THREE.Clock();
+const _forward = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
@@ -46,13 +52,30 @@ function animate() {
   if (keys['KeyW'] || keys['ArrowUp']) t += dt * speed / 320;
   if (keys['KeyS'] || keys['ArrowDown']) t -= dt * speed / 320;
   t = THREE.MathUtils.clamp(t, 0.0, 0.985);
+  // lateral movement (A/D or Left/Right) — strafe perpendicular to the
+  // current path direction. Decays toward 0 so the player doesn't drift
+  // off and forget where they are.
+  const strafeSpeed = 3.2;
+  if (keys['KeyA'] || keys['ArrowLeft'])  strafe -= dt * strafeSpeed;
+  if (keys['KeyD'] || keys['ArrowRight']) strafe += dt * strafeSpeed;
+  // soft pull back toward the trail centre so the player doesn't end up
+  // permanently off the path. 25%/s decay.
+  strafe = THREE.MathUtils.clamp(strafe, -STRAFE_MAX, STRAFE_MAX);
+  strafe -= strafe * Math.min(1, dt * 0.25);
 
   const p = TRAIL.getPointAt(t);
   const ahead = TRAIL.getPointAt(Math.min(t + 0.01, 1));
   const lookT = Math.min(t + 0.025, 1);
   const look = TRAIL.getPointAt(lookT);
-  camera.position.set(p.x, terrainHeight(p.x, p.z) + 1.68, p.z);
-  // ease yaw toward path direction
+  // forward direction in the xz plane (ignore y), then right = forward x up
+  _forward.set(look.x - p.x, 0, look.z - p.z).normalize();
+  _right.crossVectors(_forward, _up).normalize();
+  // apply strafe offset
+  const sx = p.x + _right.x * strafe;
+  const sz = p.z + _right.z * strafe;
+  camera.position.set(sx, terrainHeight(sx, sz) + 1.68, sz);
+  // ease yaw toward path direction (uses the un-strafed forward so
+  // the camera always faces along the trail, not the offset)
   const targetLook = new THREE.Vector3(look.x, terrainHeight(look.x, look.z) + 1.5, look.z);
   camera.lookAt(targetLook);
   void ahead;
