@@ -2,7 +2,7 @@
 import { buildScene, TRAIL, terrainHeight } from './world.js';
 import * as THREE from 'three';
 
-const { scene, camera, renderer, lighting, water } = await buildScene();
+const { scene, camera, renderer, lighting, water, postprocess } = await buildScene();
 window.__scene = scene; // debug hook for render harness
 window.__camera = camera;
 window.__renderer = renderer;
@@ -57,7 +57,8 @@ function animate() {
   camera.lookAt(targetLook);
   void ahead;
 
-  renderer.render(scene, camera);
+  // System 7: render through the post-processing composer
+  postprocess.render(clock.elapsedTime);
 }
 animate();
 
@@ -65,4 +66,5 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  postprocess.setSize(innerWidth, innerHeight);
 });

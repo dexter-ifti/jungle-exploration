@@ -474,5 +474,9 @@ export async function buildScene() {
   const { placeWater } = await import('./water.js');
   const water = placeWater(scene);
 
-  return { scene, camera, renderer, ground, lighting, water };
+  // ----- System 7: post-processing (bloom, color grade, vignette) -----
+  const { JunglePostprocess } = await import('./postprocess.js');
+  const postprocess = new JunglePostprocess(renderer, scene, camera);
+
+  return { scene, camera, renderer, ground, lighting, water, postprocess };
 }
