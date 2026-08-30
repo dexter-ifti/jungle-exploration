@@ -1,16 +1,14 @@
-// Hard-reload the page to bust Vite's HMR cache
+// Test with no caching
 import { chromium } from 'playwright';
 
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--enable-unsafe-swiftshader'] });
-const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, bypassCSP: true });
+const page = await ctx.newPage();
 page.on('pageerror', e => console.log('PAGEERROR:', e.message));
-// bypass cache
-await page.route('**/*', (route) => {
-  const headers = { ...route.request().headers(), 'Cache-Control': 'no-cache' };
-  route.continue({ headers });
-});
-await page.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
-await page.waitForTimeout(5000);
+page.on('console', m => { if (m.type() === 'error') console.log('CONSOLE-ERR:', m.text().slice(0, 200)); });
+await ctx.clearCookies();
+await page.goto('http://127.0.0.1:5173/?nocache=' + Date.now(), { waitUntil: 'networkidle' });
+await page.waitForTimeout(6000);
 await page.waitForFunction(() => !!window.__scene, { timeout: 5000 }).catch(() => {});
 
 const info = await page.evaluate(() => {
@@ -29,12 +27,13 @@ const info = await page.evaluate(() => {
         if(z<zmin)zmin=z; if(z>zmax)zmax=z;
       }
       samples.push({
+        count: p.count,
         size: { x:(xmax-xmin).toFixed(2), y:(ymax-ymin).toFixed(2), z:(zmax-zmin).toFixed(2) },
       });
-      if (samples.length >= 5) break;
+      if (samples.length >= 6) break;
     }
   }
-  return { total: 340, first5: samples };
+  return { total: 340, first6: samples };
 });
 console.log(JSON.stringify(info, null, 2));
 await browser.close();

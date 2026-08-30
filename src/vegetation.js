@@ -100,6 +100,11 @@ function makeCanopyMaterial(variant) {
     vertexColors: true,
     side: THREE.FrontSide,
     flatShading: true,    // gives a faceted "leaf cluster" look
+    // Provisional: small emissive so shadowed canopy undersides don't
+    // go fully black under the placeholder System 1 lighting. System 3
+    // (real canopy light shafts) will let this drop to zero.
+    emissive: new THREE.Color(0x152410),
+    emissiveIntensity: 0.35,
   });
 }
 const CANOPY_MATS = [makeCanopyMaterial(0), makeCanopyMaterial(1)];
@@ -274,95 +279,79 @@ function mergeLite(geos) {
 // as a dense solid cap and looked like a conifer. This single-mesh
 // blob reads as the irregular mass of leaves a jungle canopy actually
 // has when seen from the ground.
+// Each "canopy" is actually a CLUSTER of 3-6 smaller icosahedron blobs
+// merged into one mesh. This breaks the round silhouette into a more
+// organic, irregular shape that reads as a mass of leaf bunches rather
+// than a single sphere.
 function buildCanopy(rng, cx, cy, cz, radius, density, variant) {
-  // base icosahedron, subdivided for displacement
-  const geo = new THREE.IcosahedronGeometry(radius, 3);
-  const pos = geo.attributes.position;
-  const v = new THREE.Vector3();
-  const seed = (cx * 13.37 + cz * 7.91 + cy * 3.17) | 0;
-  // squash into an ellipsoid (wider than tall for broadleaf shape)
-  const squashY = 0.6 + rng() * 0.4;            // 0.6-1.0
-  const scaleXZ = 0.9 + rng() * 0.5;            // 0.9-1.4
-  // per-tree noise offsets so neighbouring canopies don't share the same shape
-  const offX = rng() * 100, offY = rng() * 100, offZ = rng() * 100;
-  // overall asymmetry: shift the centre of mass in xz
-  const asymX = (rng() - 0.5) * radius * 0.4;
-  const asymZ = (rng() - 0.5) * radius * 0.4;
-  // a few large lobes
-  const lobes = [];
-  const lobeCount = 2 + Math.floor(rng() * 4);
-  for (let i = 0; i < lobeCount; i++) {
+  const blobs = [];
+  const blobCount = 3 + Math.floor(rng() * 4);  // 3-6 blobs
+  // the dominant central blob
+  blobs.push({
+    pos: new THREE.Vector3(0, 0, 0),
+    radius: radius * (0.7 + rng() * 0.25),
+  });
+  // satellite blobs offset in random directions
+  for (let i = 1; i < blobCount; i++) {
     const a = rng() * Math.PI * 2;
-    const p = rng() * Math.PI;
-    lobes.push({
-      dir: new THREE.Vector3(
-        Math.sin(p) * Math.cos(a),
-        Math.cos(p) * 0.5,
-        Math.sin(p) * Math.sin(a),
+    const p = (rng() * 0.7 + 0.2) * Math.PI;
+    const dist = radius * (0.35 + rng() * 0.45);
+    blobs.push({
+      pos: new THREE.Vector3(
+        Math.sin(p) * Math.cos(a) * dist,
+        Math.cos(p) * dist * 0.5 - rng() * radius * 0.3,
+        Math.sin(p) * Math.sin(a) * dist,
       ),
-      mag: radius * (0.25 + rng() * 0.5),
-      width: 0.4 + rng() * 0.5,
+      radius: radius * (0.35 + rng() * 0.3),
     });
   }
-  for (let i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i);
-    // squash the base sphere into an ellipsoid
-    v.x *= scaleXZ;
-    v.y *= squashY;
-    v.z *= scaleXZ;
-    // outward direction
-    const dirLen = v.length() || 1;
-    const dx = v.x / dirLen, dy = v.y / dirLen, dz = v.z / dirLen;
-    // multi-octave noise: large lobes + medium bumps + fine grain
-    const n =
-      N.fbm(v.x * 0.35 + offX, v.y * 0.35 + offY, 4) * 0.7 +
-      N.fbm(v.z * 0.8 + offZ, v.y * 0.8 + offY, 3) * 0.3;
-    // a few large lobes that bias certain sides
-    let lobeAdd = 0;
-    for (const L of lobes) {
-      const dot = dx * L.dir.x + dy * L.dir.y + dz * L.dir.z;
-      lobeAdd += Math.max(0, dot) * L.mag * (0.6 + 0.4 * Math.exp(-(1 - dot) / L.width));
+  const geos = [];
+  for (const B of blobs) {
+    const detail = 2 + (B.radius > radius * 0.6 ? 1 : 0);
+    const g = new THREE.IcosahedronGeometry(B.radius, detail);
+    // per-blob noise displacement
+    const pos = g.attributes.position;
+    const v = new THREE.Vector3();
+    const offX = rng() * 100, offY = rng() * 100, offZ = rng() * 100;
+    for (let j = 0; j < pos.count; j++) {
+      v.fromBufferAttribute(pos, j);
+      // high-frequency bumpy noise to break the smooth sphere
+      const n =
+        N.fbm(v.x * 1.2 + offX, v.y * 1.2 + offY, 4) * 0.32 +
+        N.fbm(v.z * 2.4 + offZ, v.y * 2.4 + offY, 3) * 0.16 +
+        N.noise2(v.x * 4 + offX, v.y * 4 + offY) * 0.06;
+      v.multiplyScalar(1 + n);
+      // apply per-blob squash
+      const sq = 0.7 + rng() * 0.4;
+      v.y *= sq;
+      pos.setXYZ(j, v.x + B.pos.x + cx, v.y + B.pos.y + cy, v.z + B.pos.z + cz);
     }
-    const bump = Math.max(0, n) * radius * 0.85 + lobeAdd * 0.6;
-    const x = v.x + dx * bump + asymX;
-    const y = v.y + dy * bump;
-    const z = v.z + dz * bump + asymZ;
-    pos.setXYZ(i, x + cx, y + cy, z + cz);
+    g.computeVertexNormals();
+    // per-vertex color
+    const colors = new Float32Array(pos.count * 3);
+    for (let j = 0; j < pos.count; j++) {
+      const x = pos.getX(j) - cx;
+      const y = pos.getY(j) - cy;
+      const z = pos.getZ(j) - cz;
+      const lift = (y / radius) * 0.5 + 0.5;
+      const m = N.fbm(x * 0.7 + offX, z * 0.7 + offZ, 3) * 0.5 + 0.5;
+      let r = 0.18 + m * 0.10 + lift * 0.20;
+      let g = 0.40 + m * 0.22 + lift * 0.22;
+      let b = 0.16 + m * 0.08 + lift * 0.04;
+      const yellow = N.fbm(x * 1.3 + offX + 7, z * 1.3 + offZ, 2);
+      if (yellow > 0.55) { r += 0.18; g += 0.10; b -= 0.04; }
+      if (yellow < -0.4) { r = 0.32; g = 0.22; b = 0.10; }
+      colors[j * 3]     = r;
+      colors[j * 3 + 1] = g;
+      colors[j * 3 + 2] = b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geos.push(g);
   }
-  geo.computeVertexNormals();
-  geo.computeBoundingSphere();
-  geo.computeBoundingBox();
-
-  // per-vertex color: mottled greens with some lighter "sunlit" tips
-  const colors = new Float32Array(pos.count * 3);
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i) - cx;
-    const y = pos.getY(i) - cy;
-    const z = pos.getZ(i) - cz;
-    // height-based: top of canopy lighter
-    const lift = (y / radius) * 0.5 + 0.5;       // 0..1
-    // fbm mottling
-    const m = N.fbm(x * 0.6 + seed, z * 0.6 + seed, 3) * 0.5 + 0.5;
-    // base green mix
-    const r = 0.18 + m * 0.12 + lift * 0.18;
-    const g = 0.40 + m * 0.20 + lift * 0.22;
-    const b = 0.16 + m * 0.08 + lift * 0.06;
-    // occasional yellowing (older leaves / sun)
-    const yellow = N.fbm(x * 1.3 + seed + 7, z * 1.3 + seed, 2);
-    let rr = r, gg = g, bb = b;
-    if (yellow > 0.55) {
-      rr += 0.18; gg += 0.12; bb -= 0.04;
-    }
-    // brown (dead leaves) on some vertices
-    if (yellow < -0.4) {
-      rr = 0.32; gg = 0.22; bb = 0.10;
-    }
-    colors[i * 3]     = rr;
-    colors[i * 3 + 1] = gg;
-    colors[i * 3 + 2] = bb;
-  }
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  return geo;
+  const merged = mergeLite(geos);
+  merged.computeBoundingSphere();
+  merged.computeBoundingBox();
+  return merged;
 }
 
 // ---------- branch: simple tapered cylinder forking off the trunk ----------
@@ -493,7 +482,16 @@ function buildBroadleafTree(rng) {
   const density = 280 + Math.floor(rng() * 160);  // 280-440 leaves
   const variant = rng() < 0.5 ? 0 : 1;
   const crown = buildCanopy(rng, cx, cy, cz, crownR, density, variant);
-  return { trunk: trunkFull, crown, variant, height: h, baseR: r0 };
+  // Additional mid-trunk foliage cluster (smaller, eye-level) — gives
+  // the tree visible green at camera height, not just at the top.
+  const lowerCanopyR = crownR * (0.45 + rng() * 0.2);
+  const lowerCanopyY = h * (0.25 + rng() * 0.15);
+  const lowerCanopy = buildCanopy(rng, cx + (rng() - 0.5) * 0.5, lowerCanopyY,
+                                   cz + (rng() - 0.5) * 0.5, lowerCanopyR, 120, variant);
+  // merge upper and lower
+  const fullCanopy = mergeLite([crown, lowerCanopy]);
+  fullCanopy.computeBoundingSphere();
+  return { trunk: trunkFull, crown: fullCanopy, variant, height: h, baseR: r0 };
 }
 
 function buildThinHardwood(rng) {
