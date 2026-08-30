@@ -725,15 +725,126 @@ function buildWallCanopy(rng, cx, cy, cz, width, height, blobR) {
   return merged;
 }
 
+// A 0.3-0.9m "groundcover" bushy mass — fills the eye-level view
+// right at the trail edge. Very wide, very low, multiple overlapping
+// blobs that read as a mound of leaves rather than a single sphere.
+function buildGroundCover(rng) {
+  const w = 1.4 + rng() * 1.4;          // 1.4-2.8m wide
+  const h = 0.3 + rng() * 0.6;          // 0.3-0.9m tall
+  // cluster of 3-5 small overlapping blobs spread horizontally
+  const blobCount = 3 + Math.floor(rng() * 3);
+  const geos = [];
+  for (let i = 0; i < blobCount; i++) {
+    const tx = (i / (blobCount - 1) - 0.5) * w + (rng() - 0.5) * 0.3;
+    const tz = (rng() - 0.5) * w * 0.6;
+    const ty = (rng() - 0.5) * h * 0.4;
+    const r = h * (0.6 + rng() * 0.5);
+    const g = new THREE.IcosahedronGeometry(r, 2);
+    const pos = g.attributes.position;
+    const v = new THREE.Vector3();
+    const offX = rng() * 100, offY = rng() * 100, offZ = rng() * 100;
+    for (let j = 0; j < pos.count; j++) {
+      v.fromBufferAttribute(pos, j);
+      const n = N.fbm(v.x * 1.2 + offX, v.y * 1.2 + offY, 3) * 0.4 + N.noise2(v.x * 3, v.y * 3) * 0.1;
+      v.multiplyScalar(1 + n);
+      pos.setXYZ(j, v.x + tx, v.y + ty + h * 0.5, v.z + tz);
+    }
+    g.computeVertexNormals();
+    const colors = new Float32Array(pos.count * 3);
+    for (let j = 0; j < pos.count; j++) {
+      const x = pos.getX(j) - tx;
+      const y = pos.getY(j) - ty;
+      const z = pos.getZ(j) - tz;
+      const m = N.fbm(x * 0.8 + offX, z * 0.8 + offZ, 3) * 0.5 + 0.5;
+      let r = 0.18 + m * 0.12;
+      let g = 0.42 + m * 0.22;
+      let b = 0.16 + m * 0.08;
+      const yellow = N.fbm(x * 1.5 + offX + 7, z * 1.5 + offZ, 2);
+      if (yellow > 0.55) { r += 0.20; g += 0.10; b -= 0.04; }
+      if (yellow < -0.4) { r = 0.30; g = 0.20; b = 0.10; }
+      colors[j * 3]     = r;
+      colors[j * 3 + 1] = g;
+      colors[j * 3 + 2] = b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geos.push(g);
+  }
+  const merged = mergeLite(geos);
+  merged.computeBoundingSphere();
+  merged.computeBoundingBox();
+  return { trunk: null, crown: merged, variant: 0, height: h, baseR: w * 0.5 };
+}
+
+// 4-6m "umbrella" tree — wide low canopy that spans the trail. The
+// whole point is to occlude sky and create a real canopy feel at
+// walking height, with a single slender trunk.
+function buildUmbrella(rng) {
+  const h = 4 + rng() * 2;              // 4-6m total
+  const trunkH = h * (0.55 + rng() * 0.15);
+  const r0 = 0.18 + rng() * 0.15;
+  const trunk = buildTrunk(rng, trunkH, r0, 0.35, (rng() - 0.5) * 0.3, rng() * Math.PI * 2);
+  // wide flat-ish canopy of 5-7 overlapping blobs
+  const crownR = 1.6 + rng() * 0.8;      // 1.6-2.4m per blob
+  const spread = 3.0 + rng() * 1.5;     // 3-4.5m overall width
+  const cx = 0, cz = 0;
+  const cy = trunkH + 0.4;
+  const blobCount = 5 + Math.floor(rng() * 3);
+  const geos = [];
+  for (let i = 0; i < blobCount; i++) {
+    const a = (i / blobCount) * Math.PI * 2 + rng() * 0.4;
+    const dist = (i === 0 ? 0 : (0.4 + rng() * 0.6) * spread * 0.5);
+    const tx = Math.cos(a) * dist + (rng() - 0.5) * 0.4;
+    const tz = Math.sin(a) * dist + (rng() - 0.5) * 0.4;
+    const ty = cy + (rng() - 0.4) * 0.6;
+    const r = crownR * (0.7 + rng() * 0.4);
+    const g = new THREE.IcosahedronGeometry(r, 2);
+    const pos = g.attributes.position;
+    const v = new THREE.Vector3();
+    const offX = rng() * 100, offY = rng() * 100, offZ = rng() * 100;
+    for (let j = 0; j < pos.count; j++) {
+      v.fromBufferAttribute(pos, j);
+      const n = N.fbm(v.x * 1.0 + offX, v.y * 1.0 + offY, 3) * 0.45 + N.noise2(v.x * 3, v.y * 3) * 0.1;
+      v.multiplyScalar(1 + n);
+      pos.setXYZ(j, v.x + tx, v.y + ty, v.z + tz);
+    }
+    g.computeVertexNormals();
+    const colors = new Float32Array(pos.count * 3);
+    for (let j = 0; j < pos.count; j++) {
+      const x = pos.getX(j) - tx;
+      const y = pos.getY(j) - ty;
+      const z = pos.getZ(j) - tz;
+      const lift = Math.max(0, y - cy) * 0.4;
+      const m = N.fbm(x * 0.6 + offX, z * 0.6 + offZ, 3) * 0.5 + 0.5;
+      let r = 0.20 + m * 0.10 + lift * 0.18;
+      let g = 0.42 + m * 0.22 + lift * 0.20;
+      let b = 0.16 + m * 0.08 + lift * 0.04;
+      const yellow = N.fbm(x * 1.3 + offX + 7, z * 1.3 + offZ, 2);
+      if (yellow > 0.55) { r += 0.16; g += 0.10; b -= 0.04; }
+      if (yellow < -0.4) { r = 0.30; g = 0.20; b = 0.10; }
+      colors[j * 3]     = r;
+      colors[j * 3 + 1] = g;
+      colors[j * 3 + 2] = b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geos.push(g);
+  }
+  const merged = mergeLite(geos);
+  merged.computeBoundingSphere();
+  merged.computeBoundingBox();
+  return { trunk, crown: merged, variant: 0, height: h, baseR: r0 };
+}
+
 const SPECIES = [
-  { fn: buildPalmTree,        weight: 0.06, label: 'palm' },
-  { fn: buildBroadleafTree,   weight: 0.18, label: 'broadleaf' },
-  { fn: buildThinHardwood,    weight: 0.14, label: 'thin' },
-  { fn: buildStranglerFig,    weight: 0.05, label: 'fig' },
-  { fn: buildDeadSnag,        weight: 0.04, label: 'snag' },
-  { fn: buildFernTree,        weight: 0.06, label: 'fern-tree' },
-  { fn: buildShrub,           weight: 0.20, label: 'shrub' },
-  { fn: buildWallTree,        weight: 0.27, label: 'wall' },  // 2-4m bushy mass
+  { fn: buildPalmTree,        weight: 0.05, label: 'palm' },
+  { fn: buildBroadleafTree,   weight: 0.12, label: 'broadleaf' },
+  { fn: buildThinHardwood,    weight: 0.10, label: 'thin' },
+  { fn: buildStranglerFig,    weight: 0.04, label: 'fig' },
+  { fn: buildDeadSnag,        weight: 0.03, label: 'snag' },
+  { fn: buildFernTree,        weight: 0.04, label: 'fern-tree' },
+  { fn: buildShrub,           weight: 0.14, label: 'shrub' },
+  { fn: buildWallTree,        weight: 0.18, label: 'wall' },
+  { fn: buildUmbrella,        weight: 0.15, label: 'umbrella' },
+  { fn: buildGroundCover,     weight: 0.15, label: 'groundcover' },
 ];
 
 function pickSpecies(rng) {
@@ -965,10 +1076,14 @@ function scatterTrees(scene, opts) {
     const localRng = mulberry32((t * 2654435761) ^ count);
     const tree = sp.fn(localRng);
     // per-instance trunk material variation
-    const tm = barkMat(2 + tree.height * 0.2);
-    const trunkMesh = new THREE.Mesh(tree.trunk, tm);
-    trunkMesh.castShadow = true;
-    trunkMesh.receiveShadow = true;
+    const group = new THREE.Group();
+    if (tree.trunk) {
+      const tm = barkMat(2 + tree.height * 0.2);
+      const trunkMesh = new THREE.Mesh(tree.trunk, tm);
+      trunkMesh.castShadow = true;
+      trunkMesh.receiveShadow = true;
+      group.add(trunkMesh);
+    }
     // crown
     let crownMesh = null;
     if (tree.crown && tree.crown.attributes.position.count > 0) {
@@ -986,10 +1101,8 @@ function scatterTrees(scene, opts) {
       // Disable receiveShadow so the lit side stays bright even where
       // the canopy's own top would cast on its own sides.
       crownMesh.receiveShadow = false;
+      group.add(crownMesh);
     }
-    const group = new THREE.Group();
-    group.add(trunkMesh);
-    if (crownMesh) group.add(crownMesh);
     // a small random rotation around Y so silhouettes never repeat
     group.rotation.y = localRng() * Math.PI * 2;
     // small Y offset to plant the base just below ground
@@ -1017,15 +1130,17 @@ function scatterUnderstory(scene, opts) {
   const fernGeos = [];
   for (let i = 0; i < 8; i++) fernGeos.push(buildFern(mulberry32(2000 + i)));
   const fernMat = new THREE.MeshLambertMaterial({
-    map: LEAF_TEXTURES[1], transparent: false, side: THREE.DoubleSide,
-    vertexColors: true, color: 0x6ea83e,
+    map: LEAF_TEXTURES[1], transparent: true, alphaTest: 0.4,
+    side: THREE.DoubleSide, vertexColors: true, color: 0x6ea83e,
+    depthWrite: true,
   });
 
   const herbGeos = [];
   for (let i = 0; i < 6; i++) herbGeos.push(buildBroadleafHerb(mulberry32(3000 + i)));
   const herbMat = new THREE.MeshLambertMaterial({
-    map: LEAF_TEXTURES[0], transparent: false, side: THREE.DoubleSide,
-    vertexColors: true, color: 0x4e8a2a,
+    map: LEAF_TEXTURES[0], transparent: true, alphaTest: 0.4,
+    side: THREE.DoubleSide, vertexColors: true, color: 0x4e8a2a,
+    depthWrite: true,
   });
 
   const logGeos = [];
@@ -1054,8 +1169,8 @@ function scatterUnderstory(scene, opts) {
     const x = (rng() - 0.5) * WORLD.size * 0.95;
     const z = (rng() - 0.5) * WORLD.size * 0.95;
     const { dist } = distToTrail(x, z);
-    if (dist < 1.8) continue;                       // not on the trail
-    if (rng() > Math.exp(-dist * 0.018)) continue;  // trail-adjacent density
+    if (dist < 0.8) continue;                       // right at trail edge
+    if (rng() > Math.exp(-dist * 0.012)) continue;  // more permissive falloff
     const slope = Math.abs(terrainHeight(x + 1, z) - terrainHeight(x - 1, z))
                 + Math.abs(terrainHeight(x, z + 1) - terrainHeight(x, z - 1));
     if (slope > 3.0) continue;
@@ -1063,11 +1178,11 @@ function scatterUnderstory(scene, opts) {
     if (y < -0.2) continue;
     let tooClose = false;
     for (const p of fernPlaced) {
-      if ((p.x - x) ** 2 + (p.z - z) ** 2 < 1.4 * 1.4) { tooClose = true; break; }
+      if ((p.x - x) ** 2 + (p.z - z) ** 2 < 0.8 * 0.8) { tooClose = true; break; }
     }
     if (tooClose) continue;
     const geo = fernGeos[Math.floor(rng() * fernGeos.length)];
-    const s = 0.8 + rng() * 0.6;
+    const s = 1.2 + rng() * 0.8;            // larger ferns
     const mesh = new THREE.Mesh(geo, fernMat);
     mesh.scale.setScalar(s);
     mesh.rotation.y = rng() * Math.PI * 2;
@@ -1157,20 +1272,20 @@ function scatterUnderstory(scene, opts) {
 
 // ---------- public entry ----------
 export function populateVegetation(scene) {
-  // trees - heavy on the "wall" trees (2-4m bushy masses) so the
-  // camera at eye level always sees green at the trail edges.
+  // trees - dense scatter with wall + umbrella + groundcover species
+  // filling the eye-level view from the trail.
   const treeCount = scatterTrees(scene, {
-    minRadius: 2.0,
-    treeSpacing: 1.8,
+    minRadius: 1.2,
+    treeSpacing: 1.2,
     density: 1.0,
-    maxCount: 450,
+    maxCount: 200,    // temporarily reduced for diagnosis
   });
   // understory
   scatterUnderstory(scene, {
-    fernCount: 600,
-    herbCount: 350,
-    logCount: 80,
-    mossCount: 220,
+    fernCount: 400,
+    herbCount: 200,
+    logCount: 60,
+    mossCount: 150,
     vineCount: 0,
   });
   return { treeCount };
