@@ -25,10 +25,9 @@ import { makeNoise } from './world.js';
 const N = makeNoise(9990001);
 
 // ---------- falling-water texture ----------
-// Vertical bands of white-blue with horizontal noise breakup, with
-// the top brighter (water hits air) and bottom thicker (water hits
-// pool). Alpha falls off at the edges so the sheet doesn't look
-// like a flat plane.
+// Very high-contrast vertical streaks with a transparent falloff
+// at the edges. The fragment shader relies on this being a strong
+// noise field, not a soft gradient.
 function makeWaterfallTexture() {
   const W = 128, H = 256;
   const cv = document.createElement('canvas');
@@ -39,19 +38,22 @@ function makeWaterfallTexture() {
     const vy = y / H;
     for (let x = 0; x < W; x++) {
       const vx = x / W;
-      // central falloff (so edges fade out)
+      // soft horizontal falloff (rounded sheet edges)
       const h = 1 - Math.abs(vx - 0.5) * 2;
       const edge = Math.max(0, Math.min(1, h * h));
-      // VERY high-frequency vertical streaks to read as falling water
-      const streak = N.fbm(vx * 50, vy * 2, 3) * 0.5 + 0.5;
-      // secondary even higher frequency for water spray detail
-      const drop = N.noise2(vx * 200, vy * 80) * 0.5 + 0.5;
-      // horizontal noise (water turbulence)
-      const turb = N.noise2(vx * 80, vy * 20) * 0.4 + 0.6;
-      // base color: very bright white with blue tint
-      const r = Math.min(255, edge * (160 + 100 * streak * drop * turb));
-      const g = Math.min(255, edge * (190 + 80 * streak * drop * turb));
-      const b = Math.min(255, edge * (220 + 50 * streak * drop * turb));
+      // VERY high-frequency vertical streaks (water tendrils)
+      const streak1 = N.fbm(vx * 80, vy * 1.5, 3) * 0.5 + 0.5;
+      const streak2 = N.fbm(vx * 30, vy * 4, 3) * 0.5 + 0.5;
+      // very high frequency drop detail
+      const drop = N.noise2(vx * 200, vy * 100) * 0.5 + 0.5;
+      // turbulence (water surface bumps)
+      const turb = N.noise2(vx * 60, vy * 30) * 0.5 + 0.5;
+      // base brightness varies strongly so the streaks read as
+      // individual tendrils of water, not a flat panel
+      const base = streak1 * streak2;
+      const r = Math.min(255, edge * (200 + 200 * base * drop * turb));
+      const g = Math.min(255, edge * (220 + 200 * base * drop * turb));
+      const b = Math.min(255, edge * (240 + 150 * base * drop * turb));
       const a = edge * 255;
       const i = (y * W + x) * 4;
       img.data[i] = r;
@@ -191,30 +193,21 @@ function buildWaterfallSheet(scene) {
   const heightM = topY - baseY + 1;
   const group = new THREE.Group();
   const sheets = [];
-  // main sheet
-  const mainGeo = new THREE.PlaneGeometry(widthM, heightM, 12, 20);
+  // single main sheet — the previous "depth layers" created the
+  // "three smooth gray rocks" reading the critic described, so we
+  // drop them and let the main sheet carry the falls alone.
+  const mainGeo = new THREE.PlaneGeometry(widthM, heightM, 16, 24);
   const mainMat = makeWaterfallMaterial();
   mainMat.uniforms.uHeight.value = heightM;
   const mainMesh = new THREE.Mesh(mainGeo, mainMat);
+  mainMesh.frustumCulled = false;
   sheets.push(mainMesh);
   group.add(mainMesh);
-  // two slightly smaller sheets offset behind the main one for depth
-  for (let layer = 0; layer < 2; layer++) {
-    const zOffset = 0.6 + layer * 0.6;     // 0.6 and 1.2m in front of the main sheet
-    const w = widthM * (0.85 - layer * 0.2);
-    const h = heightM * (0.9 - layer * 0.1);
-    const offsetX = (layer - 0.5) * 1.2;
-    const g = new THREE.PlaneGeometry(w, h, 8, 14);
-    const m = new THREE.Mesh(g, mainMat);
-    m.position.set(offsetX, 0, zOffset);
-    m.frustumCulled = false;
-    sheets.push(m);
-    group.add(m);
-  }
-  // two side cascades at full height
+  // two side cascades at full height, kept narrow so they read as
+  // separate streams rather than competing with the main falls
   for (let s = 0; s < 2; s++) {
-    const sideOff = (s === 0 ? -1 : 1) * 11;
-    const w = 4 + Math.random() * 1.5;
+    const sideOff = (s === 0 ? -1 : 1) * 12;
+    const w = 2.5 + Math.random() * 1.0;
     const h = heightM * (0.7 + Math.random() * 0.25);
     const sg = new THREE.PlaneGeometry(w, h, 4, 8);
     const sm = makeWaterfallMaterial();

@@ -13,9 +13,16 @@ await page.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
 await page.waitForTimeout(3500);
 await page.waitForFunction(() => !!window.__scene, { timeout: 5000 }).catch(() => {});
 
-// render at a fixed t close to the ruins approach
-await page.evaluate(() => window.__setT(0.9));
+// render at a fixed t close to the falls approach
+await page.evaluate(() => window.__setT(0.985));
 await page.waitForTimeout(800);
+await page.evaluate(() => {
+  const cam = window.__camera;
+  // position the camera in the basin, slightly off-axis so we see the
+  // falls from a 3/4 view (not dead-on)
+  cam.position.set(3, 1.7, -242);
+  cam.lookAt(0, 7, -255);
+});
 await page.evaluate(() => { window.__setT = () => {}; });
 await page.waitForTimeout(1500);
 await page.screenshot({ path: outName });
