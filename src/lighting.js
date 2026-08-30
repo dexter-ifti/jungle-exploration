@@ -77,13 +77,17 @@ export class JungleLighting {
     skyTex.colorSpace = THREE.SRGBColorSpace;
     const sky = new THREE.Mesh(skyGeo, new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false }));
     this.group.add(sky);
+    this.sky = sky;
 
     // ----- sun (directional) -----
-    // Sun positioned in front-left-above so the camera (facing -z)
-    // sees the lit sides of trees as it walks the trail.
+    // Sun positioned forward-left-above so the camera (facing -z down
+    // the trail) sees the sun disk ahead of it. The radial god-rays
+    // pass needs the sun to be in front of the camera for the rays
+    // to read as light shafts. The sun casts warm light onto the
+    // forward-facing sides of the canopies.
     const sun = new THREE.DirectionalLight(0xfff0d0, 3.2);
-    sun.position.set(-50, 130, -30);
-    sun.target.position.set(0, 0, -100);
+    sun.position.set(-80, 130, -200);  // forward (z=-200) and above+left
+    sun.target.position.set(0, 0, -260);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.left = -200;
@@ -98,6 +102,21 @@ export class JungleLighting {
     this.sun = sun;
     this.group.add(sun);
     this.group.add(sun.target);
+
+    // ----- sun disk (small bright sphere at the sun's position) -----
+    // The sky gradient alone doesn't give the radial god-rays pass
+    // anything bright to "shine through". Add a small intense white
+    // sphere at the sun's position so the screen-space rays have a
+    // real source. frustumCulled = false because the sphere is at
+    // ~300m and the bounding sphere is small relative to the camera.
+    const sunDisk = new THREE.Mesh(
+      new THREE.SphereGeometry(15, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0xfff8e0, fog: false }),
+    );
+    sunDisk.position.copy(sun.position).multiplyScalar(1.6);
+    sunDisk.frustumCulled = false;
+    this.group.add(sunDisk);
+    this.sunDisk = sunDisk;
 
     // ----- hemisphere (cool sky + warm ground bounce) -----
     const hemi = new THREE.HemisphereLight(0xbedfe4, 0x4a3e26, 1.6);

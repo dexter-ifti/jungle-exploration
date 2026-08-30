@@ -90,8 +90,14 @@ function animate() {
   camera.lookAt(targetLook);
   void ahead;
 
-  // System 7: render through the post-processing composer
-  postprocess.render(clock.elapsedTime);
+  // System 7: render through the post-processing composer.
+  // Pass the visible sun disk's world position (the bright sphere that
+  // the screen-space god rays need to project from) rather than the
+  // directional light's nominal position.
+  const sunWorldPos = (lighting && lighting.sunDisk)
+    ? lighting.sunDisk.position.clone()
+    : new THREE.Vector3(-50, 130, -30);
+  postprocess.render(clock.elapsedTime, sunWorldPos);
 }
 animate();
 
