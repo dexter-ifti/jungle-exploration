@@ -108,50 +108,132 @@ function makePoolTexture() {
 const WF_TEX = makeWaterfallTexture();
 const POOL_TEX = makePoolTexture();
 
+// ---------- falling-water shader material ----------
+// Shader-driven waterfall. The texture scrolls downward over time to
+// give a sense of motion, and per-vertex displacement along the
+// outward direction (computed in the vertex shader) gives the sheet
+// some 3D structure instead of a flat plane. Alpha drops at the
+// edges and at the top/bottom so the sheet doesn't look like a
+// hard rectangle.
+const waterfallVertex = /* glsl */ `
+  uniform float uTime;
+  uniform float uHeight;
+  varying vec2 vUv;
+  varying float vAlpha;
+  void main() {
+    vUv = uv;
+    // horizontal taper (sides fall off so the sheet is rounded at the edges)
+    float edge = 1.0 - pow(abs(uv.x - 0.5) * 2.0, 1.5);
+    vAlpha = clamp(edge, 0.0, 1.0);
+    // top fade (sheet starts at top of cliff) and bottom fade (water disappears at the pool)
+    float vFade = smoothstep(0.0, 0.04, uv.y) * smoothstep(1.0, 0.85, uv.y);
+    vAlpha *= vFade;
+    // significant per-vertex displacement along z (forward) so the sheet
+    // has visible 3D bulges. Bigger near the bottom of the falls (water
+    // accelerates). This breaks the "flat panel" reading at any distance.
+    vec3 p = position;
+    float bulge = 0.6 + uv.y * 2.0;
+    p.z += sin(uv.x * 9.0 + uTime * 2.5) * 0.32 * bulge;
+    p.z += sin(uv.x * 4.0 - uTime * 1.4) * 0.48 * bulge;
+    p.z += sin(uv.x * 18.0 + uTime * 3.2) * 0.18 * bulge;
+    // taper the bottom of the falls inward (water converges as it pools)
+    p.x *= 1.0 - smoothstep(0.7, 1.0, uv.y) * 0.15;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }
+`;
+const waterfallFragment = /* glsl */ `
+  uniform sampler2D uTex;
+  uniform float uTime;
+  varying vec2 vUv;
+  varying float vAlpha;
+  void main() {
+    // scroll the texture downward to fake falling water motion
+    vec2 uv = vUv;
+    uv.y = fract(vUv.y - uTime * 0.7);
+    vec3 col = texture2D(uTex, uv).rgb;
+    // dark teal-grey water base; the streaks and brightness come from
+    // the texture itself
+    col = mix(col, vec3(0.55, 0.65, 0.72), 0.5);
+    // bright at the top and bottom (water hits air / pool)
+    col += vec3(0.25, 0.30, 0.34) * smoothstep(0.85, 1.0, vUv.y);
+    col += vec3(0.20, 0.24, 0.27) * smoothstep(0.85, 1.0, 1.0 - vUv.y);
+    gl_FragColor = vec4(col * vAlpha, 1.0);
+  }
+`;
+
+function makeWaterfallMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTex: { value: WF_TEX },
+      uTime: { value: 0 },
+      uHeight: { value: 1 },
+    },
+    vertexShader: waterfallVertex,
+    fragmentShader: waterfallFragment,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    fog: false,
+  });
+}
+
 // ---------- waterfall main sheet ----------
-// A vertical plane in front of the cliff face, with the falling-water
-// texture. Slightly transparent so the cliff shows through.
+// Multiple offset planes with the waterfall shader. Three sheets at
+// slightly different z offsets give parallax depth and break the
+// "flat panel" reading that the single-plane version produced.
 function buildWaterfallSheet(scene) {
   const cliffZ = WORLD.waterfallZ;
-  // find a representative cliff height at the falls. The cliff is at
-  // z < cliffZ; sample at z = cliffZ - 1 to get the face height.
   const centerX = TRAIL.getPoint(1).x * 0.5;
   const cliffTopY = terrainHeight(centerX, cliffZ - 1);
-  const baseY = terrainHeight(centerX, cliffZ + 5);  // the pool/clearing base
+  const baseY = terrainHeight(centerX, cliffZ + 5);
   const topY = cliffTopY;
   const widthM = 18;
   const heightM = topY - baseY + 1;
   const group = new THREE.Group();
-  // Main sheet
-  const geo = new THREE.PlaneGeometry(widthM, heightM, 6, 14);
-  const mat = new THREE.MeshBasicMaterial({
-    map: WF_TEX,
-    transparent: true,
-    opacity: 1.0,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-    fog: true,
-  });
-  const m = new THREE.Mesh(geo, mat);
-  group.add(m);
-  // Two side cascades to give the falls width
+  const sheets = [];
+  // main sheet
+  const mainGeo = new THREE.PlaneGeometry(widthM, heightM, 12, 20);
+  const mainMat = makeWaterfallMaterial();
+  mainMat.uniforms.uHeight.value = heightM;
+  const mainMesh = new THREE.Mesh(mainGeo, mainMat);
+  sheets.push(mainMesh);
+  group.add(mainMesh);
+  // two slightly smaller sheets offset behind the main one for depth
+  for (let layer = 0; layer < 2; layer++) {
+    const zOffset = 0.6 + layer * 0.6;     // 0.6 and 1.2m in front of the main sheet
+    const w = widthM * (0.85 - layer * 0.2);
+    const h = heightM * (0.9 - layer * 0.1);
+    const offsetX = (layer - 0.5) * 1.2;
+    const g = new THREE.PlaneGeometry(w, h, 8, 14);
+    const m = new THREE.Mesh(g, mainMat);
+    m.position.set(offsetX, 0, zOffset);
+    m.frustumCulled = false;
+    sheets.push(m);
+    group.add(m);
+  }
+  // two side cascades at full height
   for (let s = 0; s < 2; s++) {
     const sideOff = (s === 0 ? -1 : 1) * 11;
     const w = 4 + Math.random() * 1.5;
     const h = heightM * (0.7 + Math.random() * 0.25);
-    const sg = new THREE.PlaneGeometry(w, h, 2, 6);
-    const sm = new THREE.MeshBasicMaterial({
-      map: WF_TEX, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
-      depthWrite: false, fog: true,
-    });
+    const sg = new THREE.PlaneGeometry(w, h, 4, 8);
+    const sm = makeWaterfallMaterial();
+    sm.uniforms.uHeight.value = h;
     const sm2 = new THREE.Mesh(sg, sm);
-    sm2.position.set(sideOff, -1, 0.3);
+    sm2.position.set(sideOff, -1, 0.6);
+    sm2.frustumCulled = false;
+    sheets.push(sm2);
     group.add(sm2);
   }
-  // position the group: the sheet center is at y = (baseY + topY) / 2
-  group.position.set(centerX, (baseY + topY) / 2, cliffZ + 1.5);
+  // position the group 5m in front of the cliff's near edge so all sheets
+  // are clearly visible — cliff face starts at z = cliffZ+2 so the group
+  // sits at z = cliffZ+5, putting the falls 3m forward of the cliff.
+  group.position.set(centerX, (baseY + topY) / 2, cliffZ + 5);
+  // disable frustum culling on the main sheet too — vertex displacement
+  // moves the actual rendered verts outside the static bounding box
+  mainMesh.frustumCulled = false;
   scene.add(group);
-  return m;  // return the main sheet for animation hook
+  return sheets;  // return all sheets for animation
 }
 
 // ---------- secondary cascade sheets ----------
@@ -300,16 +382,24 @@ function addWetRocks(scene) {
 
 // ---------- public entry ----------
 export function placeWater(scene) {
-  const sheet = buildWaterfallSheet(scene);
+  const sheets = buildWaterfallSheet(scene);
   const cascades = buildSideCascades(scene);
   const pool = buildPool(scene);
   const splash = buildSplashParticles(scene);
   scene.add(splash);
   const wetRocks = addWetRocks(scene);
-  return { sheet, cascades, pool, splash, wetRocks, update: (time, dt) => animateWater(scene, time, dt, { sheet, pool, splash, cascades }) };
+  return { sheets, cascades, pool, splash, wetRocks, update: (time, dt) => animateWater(scene, time, dt, { sheets, pool, splash, cascades }) };
 }
 
 function animateWater(scene, time, dt, refs) {
+  // animate waterfall sheets (shader uTime drives the texture scroll)
+  if (refs.sheets) {
+    for (const s of refs.sheets) {
+      if (s.material && s.material.uniforms && s.material.uniforms.uTime) {
+        s.material.uniforms.uTime.value = time;
+      }
+    }
+  }
   // animate splash particles (rise and reset)
   const pos = refs.splash.geometry.attributes.position;
   const seeds = refs.splash.geometry.attributes.seed;

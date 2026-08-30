@@ -1169,6 +1169,10 @@ function scatterTrees(scene, opts) {
     // skip the cliff face (System 5 waterfall) — the cliff is at z < waterfallZ
     // and we don't want trees sticking out of the rock wall.
     if (z < WORLD.waterfallZ + 4) continue;
+    // skip the approach corridor from the clearing to the falls so
+    // trees don't block the view of the waterfall. x is squeezed to
+    // 6m around the centreline so the player has a clear sight line.
+    if (z > WORLD.waterfallZ + 4 && z < rcz + 4 && Math.abs(x) < 6) continue;
     // pick species
     const sp = pickSpecies(rng);
     const localRng = mulberry32((t * 2654435761) ^ count);
