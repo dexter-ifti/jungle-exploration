@@ -42,6 +42,7 @@ function makeNoise(seed) {
 }
 
 const N = makeNoise(1337);
+export { makeNoise };
 
 // ---------- trail spline: winding path from origin to the falls ----------
 function buildTrail() {
@@ -329,7 +330,7 @@ function mergeGeometries(geos) {
 }
 
 // ---------- main build ----------
-export function buildScene() {
+export async function buildScene() {
   const scene = new THREE.Scene();
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -478,6 +479,11 @@ export function buildScene() {
 
   // ----- scattered terrain rocks -----
   scatterRocks(scene, 260);
+
+  // ----- System 2: vegetation (trees, ferns, herbs, logs, moss) -----
+  // Imported lazily to avoid a circular import.
+  const { populateVegetation } = await import('./vegetation.js');
+  populateVegetation(scene);
 
   return { scene, camera, renderer, ground };
 }

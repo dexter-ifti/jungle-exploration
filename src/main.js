@@ -2,7 +2,13 @@
 import { buildScene, TRAIL, terrainHeight } from './world.js';
 import * as THREE from 'three';
 
-const { scene, camera, renderer } = buildScene();
+const { scene, camera, renderer } = await buildScene();
+window.__scene = scene; // debug hook for render harness
+window.__camera = camera;
+window.__renderer = renderer;
+// expose THREE for debug
+import * as __THREE from 'three';
+window.__THREE = __THREE;
 
 // render-harness hook (no gameplay effect)
 window.__setT = v => { t = Math.min(Math.max(v, 0.0), 0.985); };
