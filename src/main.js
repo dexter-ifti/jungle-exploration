@@ -9,6 +9,19 @@ window.__renderer = renderer;
 // expose THREE for debug
 import * as __THREE from 'three';
 window.__THREE = __THREE;
+// System 6: procedural sound (needs a user gesture to start; clicks
+// anywhere on the page will start the audio context)
+let sound = null;
+import('./sound.js').then(mod => {
+  sound = new mod.JungleSound(camera);
+  const start = () => {
+    sound.start();
+    removeEventListener('click', start);
+    removeEventListener('keydown', start);
+  };
+  addEventListener('click', start);
+  addEventListener('keydown', start);
+});
 
 // render-harness hook (no gameplay effect)
 window.__setT = v => { t = Math.min(Math.max(v, 0.0), 0.985); };
@@ -27,6 +40,8 @@ function animate() {
   lighting.update(clock.elapsedTime, dt);
   // System 5: animate water (splash particles, pool texture)
   water.update(clock.elapsedTime, dt);
+  // System 6: update sound (spatial volumes based on player t)
+  if (sound) sound.update(t, dt);
   const speed = (keys['ShiftLeft'] ? 4.2 : 1.7);
   if (keys['KeyW'] || keys['ArrowUp']) t += dt * speed / 320;
   if (keys['KeyS'] || keys['ArrowDown']) t -= dt * speed / 320;
