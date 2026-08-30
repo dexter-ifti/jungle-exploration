@@ -26,6 +26,16 @@ import('./sound.js').then(mod => {
 // render-harness hook (no gameplay effect)
 window.__setT = v => { t = Math.min(Math.max(v, 0.0), 0.985); };
 
+// HUD: start at full opacity, fade to barely-visible after 6s, hide
+// entirely on first keypress so it doesn't compete with the view.
+const hud = document.getElementById('hud');
+if (hud) {
+  setTimeout(() => hud.classList.add('fade'), 6000);
+  const dismiss = () => { hud.classList.add('gone'); };
+  addEventListener('keydown', dismiss, { once: true });
+  addEventListener('mousedown', dismiss, { once: true });
+}
+
 // player walks the trail spline with head-bob-free smooth motion
 let t = 0.02;
 let strafe = 0;          // lateral offset perpendicular to the path, in metres
