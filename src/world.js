@@ -470,5 +470,9 @@ export async function buildScene() {
   const { placeRuins } = await import('./ruins.js');
   placeRuins(scene);
 
-  return { scene, camera, renderer, ground, lighting };
+  // ----- System 5: waterfall, pool, and water effects -----
+  const { placeWater } = await import('./water.js');
+  const water = placeWater(scene);
+
+  return { scene, camera, renderer, ground, lighting, water };
 }

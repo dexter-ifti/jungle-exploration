@@ -1075,6 +1075,9 @@ function scatterTrees(scene, opts) {
     // actually see the temple. Ruins are centered at (0, WORLD.waterfallZ+36).
     const rcx = 0, rcz = WORLD.waterfallZ + 36;
     if (Math.hypot(x - rcx, (z - rcz) * 0.8) < 16) continue;
+    // skip the cliff face (System 5 waterfall) — the cliff is at z < waterfallZ
+    // and we don't want trees sticking out of the rock wall.
+    if (z < WORLD.waterfallZ + 4) continue;
     // pick species
     const sp = pickSpecies(rng);
     const localRng = mulberry32((t * 2654435761) ^ count);

@@ -2,7 +2,7 @@
 import { buildScene, TRAIL, terrainHeight } from './world.js';
 import * as THREE from 'three';
 
-const { scene, camera, renderer, lighting } = await buildScene();
+const { scene, camera, renderer, lighting, water } = await buildScene();
 window.__scene = scene; // debug hook for render harness
 window.__camera = camera;
 window.__renderer = renderer;
@@ -25,6 +25,8 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   // System 3: animate lighting / atmosphere
   lighting.update(clock.elapsedTime, dt);
+  // System 5: animate water (splash particles, pool texture)
+  water.update(clock.elapsedTime, dt);
   const speed = (keys['ShiftLeft'] ? 4.2 : 1.7);
   if (keys['KeyW'] || keys['ArrowUp']) t += dt * speed / 320;
   if (keys['KeyS'] || keys['ArrowDown']) t -= dt * speed / 320;
