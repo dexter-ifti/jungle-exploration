@@ -1071,6 +1071,10 @@ function scatterTrees(scene, opts) {
     const slope = Math.abs(terrainHeight(x + 1.5, z) - terrainHeight(x - 1.5, z))
                 + Math.abs(terrainHeight(x, z + 1.5) - terrainHeight(x, z - 1.5));
     if (slope > 4.5) continue;
+    // skip if inside the ruins clearing (System 4) so the player can
+    // actually see the temple. Ruins are centered at (0, WORLD.waterfallZ+36).
+    const rcx = 0, rcz = WORLD.waterfallZ + 36;
+    if (Math.hypot(x - rcx, (z - rcz) * 0.8) < 16) continue;
     // pick species
     const sp = pickSpecies(rng);
     const localRng = mulberry32((t * 2654435761) ^ count);

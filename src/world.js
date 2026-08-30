@@ -466,5 +466,9 @@ export async function buildScene() {
   const { populateVegetation } = await import('./vegetation.js');
   populateVegetation(scene);
 
+  // ----- System 4: procedural stone ruins in the clearing -----
+  const { placeRuins } = await import('./ruins.js');
+  placeRuins(scene);
+
   return { scene, camera, renderer, ground, lighting };
 }
