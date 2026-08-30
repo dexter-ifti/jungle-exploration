@@ -645,14 +645,95 @@ function buildShrub(rng) {
   return { trunk: trunkFull, crown, variant, height: h, baseR: 0.25 };
 }
 
+// A 2-4m "wall" of bushy mass — multiple overlapping canopy blobs
+// spread horizontally, with a short trunk or no visible trunk. This
+// is the workhorse: at the camera's eye level (1.7m), a 2-4m wall
+// of leaves completely fills the horizontal view from the trail.
+function buildWallTree(rng) {
+  const h = 2.0 + rng() * 2.0;          // 2-4m
+  const parts = [];
+  // 2-4 short trunks / stems coming up from the ground
+  const stems = 2 + Math.floor(rng() * 3);
+  for (let i = 0; i < stems; i++) {
+    const a = (i / stems) * Math.PI * 2 + rng() * 0.5;
+    const offR = 0.3 + rng() * 0.4;
+    const x = Math.cos(a) * offR, z = Math.sin(a) * offR;
+    const len = h * (0.9 + rng() * 0.2);
+    const r = 0.07 + rng() * 0.06;
+    const tg = buildTrunk(rng, len, r, 0.2, (rng() - 0.5) * 0.3, rng() * Math.PI * 2);
+    tg.translate(x, 0, z);
+    parts.push(tg);
+  }
+  const trunkFull = mergeLite(parts);
+  // Wall: cluster of 4-7 overlapping canopy blobs spread across
+  // a wider horizontal area, all at roughly eye level (h*0.5-0.7).
+  const crownR = h * 0.55 + rng() * 0.35;   // 1.1-1.95m per blob
+  const wallW = h * (1.2 + rng() * 0.6);     // overall width
+  const wallH = h * (0.7 + rng() * 0.3);
+  const cx = (rng() - 0.5) * 0.3;
+  const cz = (rng() - 0.5) * 0.3;
+  const crown = buildWallCanopy(rng, cx, h * 0.5, cz, wallW, wallH, crownR);
+  return { trunk: trunkFull, crown, variant: 0, height: h, baseR: 0.3 };
+}
+
+// A wall-style canopy: a row of overlapping blobs at eye level.
+function buildWallCanopy(rng, cx, cy, cz, width, height, blobR) {
+  const blobs = [];
+  const count = 4 + Math.floor(rng() * 4);
+  for (let i = 0; i < count; i++) {
+    const tx = (i / (count - 1) - 0.5) * width;
+    const ty = (rng() - 0.5) * height * 0.4;
+    const tz = (rng() - 0.5) * width * 0.4;
+    blobs.push({ pos: new THREE.Vector3(tx + cx, cy + ty, tz + cz), radius: blobR * (0.7 + rng() * 0.4) });
+  }
+  const geos = [];
+  for (const B of blobs) {
+    const g = new THREE.IcosahedronGeometry(B.radius, 2);
+    const pos = g.attributes.position;
+    const v = new THREE.Vector3();
+    const offX = rng() * 100, offY = rng() * 100, offZ = rng() * 100;
+    for (let j = 0; j < pos.count; j++) {
+      v.fromBufferAttribute(pos, j);
+      const n = N.fbm(v.x * 1.0 + offX, v.y * 1.0 + offY, 3) * 0.4 + N.noise2(v.x * 3, v.y * 3) * 0.1;
+      v.multiplyScalar(1 + n);
+      pos.setXYZ(j, v.x + B.pos.x, v.y + B.pos.y, v.z + B.pos.z);
+    }
+    g.computeVertexNormals();
+    const colors = new Float32Array(pos.count * 3);
+    for (let j = 0; j < pos.count; j++) {
+      const x = pos.getX(j) - cx;
+      const y = pos.getY(j) - cy;
+      const z = pos.getZ(j) - cz;
+      const lift = Math.max(0, y) * 0.3;
+      const m = N.fbm(x * 0.7 + offX, z * 0.7 + offZ, 3) * 0.5 + 0.5;
+      let r = 0.18 + m * 0.10 + lift * 0.20;
+      let g = 0.40 + m * 0.22 + lift * 0.22;
+      let b = 0.16 + m * 0.08 + lift * 0.04;
+      const yellow = N.fbm(x * 1.3 + offX + 7, z * 1.3 + offZ, 2);
+      if (yellow > 0.55) { r += 0.18; g += 0.10; b -= 0.04; }
+      if (yellow < -0.4) { r = 0.32; g = 0.22; b = 0.10; }
+      colors[j * 3]     = r;
+      colors[j * 3 + 1] = g;
+      colors[j * 3 + 2] = b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geos.push(g);
+  }
+  const merged = mergeLite(geos);
+  merged.computeBoundingSphere();
+  merged.computeBoundingBox();
+  return merged;
+}
+
 const SPECIES = [
-  { fn: buildPalmTree,        weight: 0.10, label: 'palm' },
-  { fn: buildBroadleafTree,   weight: 0.30, label: 'broadleaf' },
-  { fn: buildThinHardwood,    weight: 0.24, label: 'thin' },
-  { fn: buildStranglerFig,    weight: 0.07, label: 'fig' },
-  { fn: buildDeadSnag,        weight: 0.05, label: 'snag' },
-  { fn: buildFernTree,        weight: 0.10, label: 'fern-tree' },
-  { fn: buildShrub,           weight: 0.14, label: 'shrub' },
+  { fn: buildPalmTree,        weight: 0.06, label: 'palm' },
+  { fn: buildBroadleafTree,   weight: 0.18, label: 'broadleaf' },
+  { fn: buildThinHardwood,    weight: 0.14, label: 'thin' },
+  { fn: buildStranglerFig,    weight: 0.05, label: 'fig' },
+  { fn: buildDeadSnag,        weight: 0.04, label: 'snag' },
+  { fn: buildFernTree,        weight: 0.06, label: 'fern-tree' },
+  { fn: buildShrub,           weight: 0.20, label: 'shrub' },
+  { fn: buildWallTree,        weight: 0.27, label: 'wall' },  // 2-4m bushy mass
 ];
 
 function pickSpecies(rng) {
@@ -1072,20 +1153,20 @@ function scatterUnderstory(scene, opts) {
 
 // ---------- public entry ----------
 export function populateVegetation(scene) {
-  // trees
+  // trees - heavy on the "wall" trees (2-4m bushy masses) so the
+  // camera at eye level always sees green at the trail edges.
   const treeCount = scatterTrees(scene, {
-    minRadius: 2.5,
-    treeSpacing: 2.3,
+    minRadius: 2.0,
+    treeSpacing: 1.8,
     density: 1.0,
-    maxCount: 350,
+    maxCount: 450,
   });
-  // understory - dense because the camera is at eye-level and ferns
-  // are the most reliable "jungle" read at ground level.
+  // understory
   scatterUnderstory(scene, {
-    fernCount: 700,
-    herbCount: 400,
-    logCount: 90,
-    mossCount: 260,
+    fernCount: 600,
+    herbCount: 350,
+    logCount: 80,
+    mossCount: 220,
     vineCount: 0,
   });
   return { treeCount };
