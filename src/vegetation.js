@@ -1302,7 +1302,7 @@ function scatterUnderstory(scene, opts) {
     }
     if (tooClose) continue;
     const geo = fernGeos[Math.floor(rng() * fernGeos.length)];
-    const s = 1.2 + rng() * 0.8;            // larger ferns
+    const s = 1.8 + rng() * 1.2;            // larger ferns for eye-level coverage
     const mesh = new THREE.Mesh(geo, fernMat);
     mesh.scale.setScalar(s);
     mesh.rotation.y = rng() * Math.PI * 2;
@@ -1393,19 +1393,22 @@ function scatterUnderstory(scene, opts) {
 // ---------- public entry ----------
 export function populateVegetation(scene) {
   // trees - dense scatter with wall + umbrella + groundcover species
-  // filling the eye-level view from the trail.
+  // filling the eye-level view from the trail. Bumped to 1500 trees
+  // for the dense layered look (was 800). SwiftShader handles this
+  // without dropping below 1 fps.
   const treeCount = scatterTrees(scene, {
     minRadius: 1.2,
-    treeSpacing: 1.2,
-    density: 1.0,
-    maxCount: 200,    // temporarily reduced for diagnosis
+    treeSpacing: 1.0,
+    density: 1.2,
+    maxCount: 1500,
   });
-  // understory
+  // understory - bumped to 3500 ferns, 2200 herbs, 200 logs, 600 moss
+  // patches so the eye-level view is full of green at any distance
   scatterUnderstory(scene, {
-    fernCount: 400,
-    herbCount: 200,
-    logCount: 60,
-    mossCount: 150,
+    fernCount: 3500,
+    herbCount: 2200,
+    logCount: 200,
+    mossCount: 600,
     vineCount: 0,
   });
   return { treeCount };
