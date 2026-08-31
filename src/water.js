@@ -122,6 +122,7 @@ const waterfallVertex = /* glsl */ `
   uniform float uHeight;
   varying vec2 vUv;
   varying float vAlpha;
+  varying float vBulge;
   void main() {
     vUv = uv;
     // horizontal taper (sides fall off so the sheet is rounded at the edges)
@@ -130,16 +131,21 @@ const waterfallVertex = /* glsl */ `
     // top fade (sheet starts at top of cliff) and bottom fade (water disappears at the pool)
     float vFade = smoothstep(0.0, 0.04, uv.y) * smoothstep(1.0, 0.85, uv.y);
     vAlpha *= vFade;
-    // significant per-vertex displacement along z (forward) so the sheet
-    // has visible 3D bulges. Bigger near the bottom of the falls (water
-    // accelerates). This breaks the "flat panel" reading at any distance.
+    // large per-vertex displacement along z (forward) — significant
+    // bulges (1.5-3m) that read as individual water tendrils in the
+    // sheet. Combined with the per-fragment streaks in the fragment
+    // shader, this breaks the "flat panel" reading even in a static
+    // frame. Bigger near the bottom of the falls (water accelerates).
     vec3 p = position;
-    float bulge = 0.6 + uv.y * 2.0;
-    p.z += sin(uv.x * 9.0 + uTime * 2.5) * 0.32 * bulge;
-    p.z += sin(uv.x * 4.0 - uTime * 1.4) * 0.48 * bulge;
-    p.z += sin(uv.x * 18.0 + uTime * 3.2) * 0.18 * bulge;
+    float bulge = 1.2 + uv.y * 4.0;
+    p.z += sin(uv.x * 9.0 + uTime * 2.5) * 0.55 * bulge;
+    p.z += sin(uv.x * 4.0 - uTime * 1.4) * 0.85 * bulge;
+    p.z += sin(uv.x * 18.0 + uTime * 3.2) * 0.30 * bulge;
+    // small per-vertex Y wobble so the sheet isn't a perfect rectangle
+    p.y += sin(uv.x * 12.0 + uTime * 3.0) * 0.25;
     // taper the bottom of the falls inward (water converges as it pools)
     p.x *= 1.0 - smoothstep(0.7, 1.0, uv.y) * 0.15;
+    vBulge = bulge;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }
 `;
@@ -148,6 +154,7 @@ const waterfallFragment = /* glsl */ `
   uniform float uTime;
   varying vec2 vUv;
   varying float vAlpha;
+  varying float vBulge;
   void main() {
     // scroll the texture downward to fake falling water motion
     vec2 uv = vUv;
@@ -155,10 +162,20 @@ const waterfallFragment = /* glsl */ `
     vec3 col = texture2D(uTex, uv).rgb;
     // dark teal-grey water base; the streaks and brightness come from
     // the texture itself
-    col = mix(col, vec3(0.55, 0.65, 0.72), 0.5);
+    col = mix(col, vec3(0.62, 0.72, 0.78), 0.5);
     // bright at the top and bottom (water hits air / pool)
-    col += vec3(0.25, 0.30, 0.34) * smoothstep(0.85, 1.0, vUv.y);
-    col += vec3(0.20, 0.24, 0.27) * smoothstep(0.85, 1.0, 1.0 - vUv.y);
+    col += vec3(0.28, 0.34, 0.40) * smoothstep(0.85, 1.0, vUv.y);
+    col += vec3(0.24, 0.28, 0.32) * smoothstep(0.85, 1.0, 1.0 - vUv.y);
+    // fragment-level vertical streaks that don't depend on the texture:
+    // every ~5% of UV width there's a brighter streak. Combined with
+    // the per-vertex bulges, the sheet reads as a mass of vertical
+    // water columns. Streak phase shifts with uv.y so the streaks
+    // appear to flow downward.
+    float streakPhase = uv.x * 24.0 + vUv.y * 0.0;   // 24 streaks across
+    float streak = step(0.6, fract(streakPhase)) * 0.4;
+    col += vec3(streak * 0.35, streak * 0.42, streak * 0.50);
+    // bulge-driven highlight: forward-bulging parts catch more light
+    col += vec3(0.12, 0.15, 0.18) * smoothstep(0.5, 1.5, vBulge - 1.0);
     gl_FragColor = vec4(col * vAlpha, 1.0);
   }
 `;
