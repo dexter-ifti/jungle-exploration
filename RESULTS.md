@@ -34,8 +34,21 @@ After the original FAIL, I committed four targeted fixes at the user's request. 
 | 1. lateral movement | `579518c` | A/D strafes perpendicular to the path with auto-recenter; canopies now stack two cluster layers with a 0.55-0.85x radius offset on the second, breaking the "blob on stick" silhouette; leaf-quilt overlay (60 hex-fan clusters) on every canopy | 6-7/10 on the vegetation axis |
 | 2. waterfall | `a6dae8c` + `915e4f1` | Replaced MeshBasicMaterial sheet with a ShaderMaterial that scrolls the texture downward and applies per-vertex z-displacement (deeper bulges at the bottom of the falls). Dropped the depth-layer sheets that read as "three smooth gray rocks". Single main sheet with a higher-contrast vertical-streak texture. Added a 6m-wide corridor exclusion from the ruins clearing to the falls so trees don't block the sight line. | 2-3/10. The structural problem: a single textured plane at this distance with a static screenshot frame cannot read as falling water. A proper fix would be GPU per-vertex animation that visibly distorts each frame, or particle streams instead of planes. |
 | 3. ruins | `b75ea86` | Tighter debug render at t=0.9 (ruins approach) shows stone blocks, walls, and temple platform recognizable as a ruined temple. | 7/10 |
+| 4. UI instructions | `69f593f` | Small dark-glass HUD pinned to top-left with the controls; fades to 0.18 opacity after 6s, dismisses to 0 on first keypress. | n/a (UX) |
 
 Net effect: vegetation moved from 2 → 6-7, ruins from 1 → 7, waterfall remained 1-3 (the flat-plane problem is structural). The full-frame gauntlet would still FAIL because the waterfall is a load-bearing system for the final clearing.
+
+## Reference-look follow-up
+
+User supplied three Unreal-engine-quality photoreal jungle reference images (volumetric god rays, subsurface leaf scattering, PBR stone, dense layered vegetation). Three commits added cheap fakes for the most visible features:
+
+| Commit | What changed | Critic grade |
+|--------|--------------|--------------|
+| `404e0f8` | Screen-space god-rays post-process pass (80-sample radial blur from sun position) + visible sun disk mesh at 1.6x the directional light's position. | 3/10 — radial blur needs occluders in the line of sight, my scatter has gaps |
+| `f2a8f3e` | Particle count 400→900, size 0.12→0.22, opacity 0.55→0.78. Canopy emissive 0x1d3416/0.5 → 0x2a4a1e/0.7 (cheap SSS fake). | 6/10 — dust and canopy glow visible |
+| `9dc5fb0` | God ray billboards clustered (24 long thin quads in 50x30x80 box around t=0.3 trail position) so they're always in the player's line of sight to the sun. ShaderMaterial was tried first but SwiftShader threw uniform-binding errors; fell back to MeshBasicMaterial with the existing vertical-streak texture. | 6/10 — visible diagonal streaks radiating from the sun, but read as flat 2D billboards not true volumetric shafts |
+
+Net: brought atmospheric ingredients (god rays, dust, canopy glow) from 2-3/10 to 6/10 with cheap fakes. The remaining gap to the reference look (true PBR stone, real leaf SSS, raymarched volumetric, dense plant variety) requires a multi-day rewrite that's not in scope for incremental fixes.
 
 ## What was built
 
