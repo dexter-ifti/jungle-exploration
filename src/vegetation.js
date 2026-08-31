@@ -1393,22 +1393,22 @@ function scatterUnderstory(scene, opts) {
 // ---------- public entry ----------
 export function populateVegetation(scene) {
   // trees - dense scatter with wall + umbrella + groundcover species
-  // filling the eye-level view from the trail. Bumped to 1500 trees
-  // for the dense layered look (was 800). SwiftShader handles this
-  // without dropping below 1 fps.
+  // filling the eye-level view from the trail. Bumped to 1000 trees
+  // for the dense layered look. SwiftShader drops below 1 fps at
+  // higher counts, so this is the practical limit for headless.
   const treeCount = scatterTrees(scene, {
     minRadius: 1.2,
     treeSpacing: 1.0,
     density: 1.2,
-    maxCount: 1500,
+    maxCount: 1000,
   });
-  // understory - bumped to 3500 ferns, 2200 herbs, 200 logs, 600 moss
+  // understory - bumped to 1800 ferns, 1200 herbs, 150 logs, 400 moss
   // patches so the eye-level view is full of green at any distance
   scatterUnderstory(scene, {
-    fernCount: 3500,
-    herbCount: 2200,
-    logCount: 200,
-    mossCount: 600,
+    fernCount: 1800,
+    herbCount: 1200,
+    logCount: 150,
+    mossCount: 400,
     vineCount: 0,
   });
   return { treeCount };

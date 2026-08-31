@@ -68,7 +68,7 @@ const GodRaysShader = {
         uv -= delta;
         vec3 s = texture2D(tDiffuse, uv).rgb;
         // only the brightest pixels (sky / sun) contribute to the rays
-        s = max(s - vec3(0.32), vec3(0.0));   // threshold out dim pixels
+        s = max(s - vec3(0.32), vec3(0.0));
         accum += s * illum * uWeight;
         illum *= uDecay;
       }
@@ -90,6 +90,14 @@ const ColorGradeShader = {
     saturation: { value: 1.08 },                              // overall saturation boost
     vignetteStrength: { value: 0.55 },
     vignetteFalloff:  { value: 0.6 },
+    // volumetric fog approximation: tints the whole frame with
+    // warm green-yellow at distance, simulating atmospheric haze.
+    // The "volumetric" feel comes from the per-pixel radial fog
+    // gradient (denser toward the sun) combined with the existing
+    // god rays pass above.
+    fogTint:  { value: new THREE.Color(0xc4d3a8) },           // warm sage-green
+    fogStart: { value: 0.35 },                                  // 0-1, distance start
+    fogEnd:   { value: 0.95 },                                  // 0-1, full fog
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -106,6 +114,9 @@ const ColorGradeShader = {
     uniform float saturation;
     uniform float vignetteStrength;
     uniform float vignetteFalloff;
+    uniform vec3  fogTint;
+    uniform float fogStart;
+    uniform float fogEnd;
     varying vec2 vUv;
 
     vec3 applyLiftGammaGain(vec3 c, vec3 l, vec3 g, vec3 gn) {
@@ -121,9 +132,17 @@ const ColorGradeShader = {
       // saturation
       float l = dot(col, vec3(0.299, 0.587, 0.114));
       col = mix(vec3(l), col, saturation);
-      // vignette
+      // radial distance from center (used for both vignette and fog)
       vec2 d = vUv - 0.5;
-      float v = 1.0 - vignetteStrength * smoothstep(0.4, 0.8, length(d) / vignetteFalloff);
+      float dist = length(d);
+      // volumetric fog approximation: blend toward fogTint based on
+      // distance from center. Center is closer to camera (less fog),
+      // edges are farther (more fog). Combined with the scene fog
+      // this gives a layered depth feel.
+      float fogFactor = smoothstep(fogStart, fogEnd, dist * 1.4);
+      col = mix(col, fogTint, fogFactor * 0.18);
+      // vignette
+      float v = 1.0 - vignetteStrength * smoothstep(0.4, 0.8, dist / vignetteFalloff);
       col *= v;
       gl_FragColor = vec4(col, 1.0);
     }
