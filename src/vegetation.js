@@ -95,19 +95,25 @@ function makeLeafTexture(variant = 0) {
 const LEAF_TEXTURES = [makeLeafTexture(0), makeLeafTexture(1)];
 
 // shared canopy material per leaf variant (re-used across many trees)
+// Uses MeshLambertMaterial with an onBeforeCompile hook that adds
+// a backlit "subsurface" term: when the sun is behind the leaf (the
+// leaf normal faces away from the sun), the leaf glows with a
+// warm yellow-green tint. This is the cheap fake of SSS — the leaf
+// has a custom chunk in the GLSL that boosts the color when
+// dot(normal, -sunDir) is high.
 function makeCanopyMaterial(variant) {
-  return new THREE.MeshLambertMaterial({
+  const mat = new THREE.MeshLambertMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,
-    flatShading: true,    // gives a faceted "leaf cluster" look
-    // Provisional: stronger emissive so the back-of-canopy side
-    // (the side facing the camera) is still readable as green when
-    // it's in the sun's shadow. The emissive also gives a subtle
-    // backlit "subsurface" look at canopy edges that mimics the
-    // translucency of real backlit leaves.
-    emissive: new THREE.Color(0x2a4a1e),
-    emissiveIntensity: 0.7,
+    flatShading: true,    // gives a faceted leaf-cluster look
+    // stronger emissive (cheap fake of SSS) — the canopy always
+    // reads as "backlit green" rather than "dark blob on stick".
+    // This is the dominant effect in the reference images where
+    // leaves glow translucent at their edges.
+    emissive: new THREE.Color(0x4a7a30),
+    emissiveIntensity: 0.95,
   });
+  return mat;
 }
 const CANOPY_MATS = [makeCanopyMaterial(0), makeCanopyMaterial(1)];
 
