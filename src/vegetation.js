@@ -546,11 +546,26 @@ function buildPalmTree(rng) {
   return { trunk: trunkFull, crown: crownGeo, variant: 0, height: h, baseR: r0, isPalm: true };
 }
 
+// ---------- branch with leaf cluster at tip ----------
+// Builds a single branch ending in a small leaf cluster. This is
+// the "Y" structure that gives broadleaf trees their characteristic
+// silhouette: trunk → main branch → sub-branches → leaf bunches.
+function buildBranchWithLeafCluster(rng, length, baseR, taper, leafR, leafVariant) {
+  const branch = buildBranch(rng, length, baseR, taper);
+  // build a small leaf cluster at the tip (in local space, branch
+  // points in +X direction so tip is at +length)
+  const leafCluster = buildCanopyCluster(rng, length, 0, 0, leafR, 80, leafVariant);
+  // merge
+  return mergeLite([branch, leafCluster]);
+}
+
 function buildBroadleafTree(rng) {
-  // Modest trunk height with a WIDE LOW canopy. Real jungle canopies
-  // spread horizontally at moderate heights; the camera at eye-level
-  // needs to see green masses, not sky-high twigs.
-  const h = 8 + rng() * 6;           // 8-14m (was 14-28m)
+  // Real broadleaf structure: trunk + main branches + sub-branches +
+  // leaf clusters at every sub-branch tip. This is the standard
+  // "L-system" structure of broadleaf trees: each branch has leaves
+  // at its tip, so the canopy is naturally distributed rather
+  // than sitting as a single blob on top of a stick.
+  const h = 8 + rng() * 6;           // 8-14m
   const r0 = 0.45 + rng() * 0.5;     // thick base
   const taper = 0.55 + rng() * 0.2;
   const lean = (rng() - 0.5) * 0.6;
@@ -558,39 +573,77 @@ function buildBroadleafTree(rng) {
   const trunk = buildTrunk(rng, h, r0, taper, lean, twist);
   // buttresses on bigger trees
   const buttressGeos = r0 > 0.55 ? buildButtresses(rng, r0, 3 + Math.floor(rng() * 4)) : null;
-  // 4-9 main branches forking from the top third
+  // 4-6 main branches forking from the top third. Each branch
+  // becomes a real "Y" structure with sub-branches carrying leaves.
+  // The buildBranch geometry points in +X direction; we rotate the
+  // whole branch (sub-branches + main) to point outward and slightly
+  // up from the trunk.
   const branches = [];
-  const branchCount = 4 + Math.floor(rng() * 6);
+  const branchCount = 3 + Math.floor(rng() * 2);   // 3-4 main branches (was 4-6)
+  const variant = rng() < 0.5 ? 0 : 1;
   for (let i = 0; i < branchCount; i++) {
     const t = 0.5 + rng() * 0.35;     // branches start halfway up
     const yBase = t * h;
     const a0 = (i / branchCount) * Math.PI * 2 + rng() * 0.6;
-    const blen = 2.8 + rng() * 4.5;
+    const blen = 2.5 + rng() * 3.0;
     const br = r0 * (1 - taper * t) * (0.7 + rng() * 0.4);
-    const bg = buildBranch(rng, blen, br, 0.4);
-    bg.rotateX(-Math.PI / 2 + (rng() - 0.5) * 0.4);
-    bg.rotateY(a0);
-    bg.translate(Math.sin(t * Math.PI) * lean, yBase, Math.sin(t * Math.PI * 0.5 + twist) * lean * 0.6);
-    branches.push(bg);
+    // Build a sub-branch group: each sub-branch starts at some
+    // fraction of the main branch's length and carries a leaf cluster
+    // at its tip. buildBranch and buildCanopyCluster return raw
+    // BufferGeometries; wrap each in a temporary Mesh so we can add
+    // them to the Group.
+    const subBranchCount = 1 + Math.floor(rng() * 2);   // 1-2 (was 2-3, perf)
+    const branchGroup = new THREE.Group();
+    for (let j = 0; j < subBranchCount; j++) {
+      const subT = 0.4 + (j / subBranchCount) * 0.6 + rng() * 0.2;
+      const subX = blen * subT;
+      const subY = blen * (0.05 + rng() * 0.15);  // slight upward angle
+      const subLen = blen * (0.4 + rng() * 0.3);
+      const subR = br * (0.4 + rng() * 0.2);
+      const subLeafR = subLen * (0.45 + rng() * 0.25);
+      // build the sub-branch geometry (in local space of main branch)
+      const subBranchGeo = buildBranch(rng, subLen, subR, 0.3);
+      const subLeafGeo = buildCanopyCluster(rng, subLen, 0, 0, subLeafR, 30, variant);
+      const subFull = mergeLite([subBranchGeo, subLeafGeo]);
+      // position the sub-branch so its base is at (subX, subY, 0)
+      // in the main branch's local frame, and rotates outward
+      const subAngle = (rng() - 0.5) * 0.6 + (j - subBranchCount/2) * 0.5;
+      subFull.translate(subX, subY, 0);
+      subFull.rotateZ(subAngle);
+      branchGroup.add(new THREE.Mesh(subFull));
+    }
+    // main branch geometry (just the trunk segment, no leaves at the
+    // very end since the sub-branches carry them)
+    const mainBranch = buildBranch(rng, blen, br, 0.4);
+    branchGroup.add(new THREE.Mesh(mainBranch));
+    // rotate the whole branch group to point outward (from +X to a
+    // direction in the XZ plane based on a0, tilted up a bit)
+    branchGroup.rotation.set(0, a0, -Math.PI / 2 + (rng() - 0.5) * 0.4);
+    // position the branch at its start point on the trunk
+    branchGroup.position.set(
+      Math.sin(t * Math.PI) * lean,
+      yBase,
+      Math.sin(t * Math.PI * 0.5 + twist) * lean * 0.6,
+    );
+  // bake the branch group's transform into its child geometries, then
+  // collect them for the trunk merge
+  branchGroup.updateMatrixWorld(true);
+  const branchGeoms = [];
+  branchGroup.traverse(o => {
+    if (o.isMesh && o.geometry) {
+      const g = o.geometry.clone();
+      g.applyMatrix4(o.matrixWorld);
+      branchGeoms.push(g);
+    }
+  });
+  branches.push(mergeLite(branchGeoms));
   }
   const trunkFull = mergeLite([trunk, ...(buttressGeos ? [buttressGeos] : []), ...branches]);
-  // Foliage: WIDE LOW canopy centered around 45-70% of trunk height
-  const crownR = 3.5 + rng() * 2.4;          // 3.5-5.9m
-  const cy = h * (0.45 + rng() * 0.25);       // 45-70% up — much lower
-  const cx = 0, cz = 0;
-  const density = 280 + Math.floor(rng() * 160);  // 280-440 leaves
-  const variant = rng() < 0.5 ? 0 : 1;
-  const crown = buildCanopy(rng, cx, cy, cz, crownR, density, variant);
-  // Additional mid-trunk foliage cluster (smaller, eye-level) — gives
-  // the tree visible green at camera height, not just at the top.
-  const lowerCanopyR = crownR * (0.45 + rng() * 0.2);
-  const lowerCanopyY = h * (0.25 + rng() * 0.15);
-  const lowerCanopy = buildCanopy(rng, cx + (rng() - 0.5) * 0.5, lowerCanopyY,
-                                   cz + (rng() - 0.5) * 0.5, lowerCanopyR, 120, variant);
-  // merge upper and lower
-  const fullCanopy = mergeLite([crown, lowerCanopy]);
-  fullCanopy.computeBoundingSphere();
-  return { trunk: trunkFull, crown: fullCanopy, variant, height: h, baseR: r0 };
+  // a small central upper-canopy cluster so the tree's top doesn't
+  // look bare when seen from above
+  const upperCrownR = 1.2 + rng() * 0.6;
+  const upperCrown = buildCanopyCluster(rng, 0, h * 0.85, 0, upperCrownR, 60, variant);
+  return { trunk: trunkFull, crown: upperCrown, variant, height: h, baseR: r0 };
 }
 
 function buildThinHardwood(rng) {
@@ -1399,17 +1452,15 @@ function scatterUnderstory(scene, opts) {
 // ---------- public entry ----------
 export function populateVegetation(scene) {
   // trees - dense scatter with wall + umbrella + groundcover species
-  // filling the eye-level view from the trail. Bumped to 1000 trees
-  // for the dense layered look. SwiftShader drops below 1 fps at
-  // higher counts, so this is the practical limit for headless.
+  // filling the eye-level view from the trail. 700 trees balances
+  // density against the heavy L-system broadleaf geometry.
   const treeCount = scatterTrees(scene, {
     minRadius: 1.2,
     treeSpacing: 1.0,
     density: 1.2,
-    maxCount: 1000,
+    maxCount: 700,
   });
-  // understory - bumped to 1800 ferns, 1200 herbs, 150 logs, 400 moss
-  // patches so the eye-level view is full of green at any distance
+  // understory
   scatterUnderstory(scene, {
     fernCount: 1800,
     herbCount: 1200,
