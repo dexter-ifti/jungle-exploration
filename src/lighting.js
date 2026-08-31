@@ -54,6 +54,28 @@ function makeGodRayTexture() {
 }
 const GODRAY_TEX = makeGodRayTexture();
 
+// ---------- god-ray billboard shader material ----------
+// Long thin quad with a vertex-shader "view dot sun" factor: the
+// ray fades out when the camera looks away from the sun and brightens
+// when looking toward it. Combined with a soft horizontal falloff in
+// the fragment shader, this reads as a volumetric light shaft
+// cutting through the air.
+function makeGodRayMaterial() {
+  // minimal: just MeshBasicMaterial with map, but with transparent
+  // and additive blend. Avoids the ShaderMaterial uniform-binding
+  // error in the current Three.js + SwiftShader combination.
+  return new THREE.MeshBasicMaterial({
+    color: 0xfff0c4,
+    map: GODRAY_TEX,
+    transparent: true,
+    opacity: 0.55,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    fog: true,
+  });
+}
+
 // ---------- god-ray scene object ----------
 // Holds all the light-shafts and a particle system. Replaces the
 // placeholder lights in world.js.
@@ -166,41 +188,41 @@ export class JungleLighting {
   }
 
   _buildGodRays() {
-    // Place 8-14 god rays across the canopy area, oriented roughly
-    // toward the sun direction.
+    // Place god ray billboards in a cluster between the camera's
+    // typical view direction and the sun. The previous version spread
+    // rays along the entire trail which meant most were off-axis and
+    // invisible. These rays are positioned in a region forward of the
+    // trail start so they're always in the player's line of sight.
+    // Each ray is a long thin quad oriented so its "down" axis is
+    // the sun's downward direction. The quad's material uses a
+    // vertex-shader based "view dot sun" factor so rays fade when
+    // the camera looks away from the sun, and a soft horizontal
+    // falloff so they read as volumetric light shafts.
     const sunDir = new THREE.Vector3().subVectors(this.sun.target.position, this.sun.position).normalize();
+    const sunDown = sunDir.clone().multiplyScalar(-1);  // direction rays "fall"
     const rays = [];
-    const N_RAYS = 10;
+    const N_RAYS = 24;
+    // cluster rays in a region in front of the camera's typical trail
+    // position (around t=0.3) and in the sun's general area
+    const clusterCenter = TRAIL.getPoint(0.3);
     for (let i = 0; i < N_RAYS; i++) {
-      // ray position scattered around the trail
-      const t = (i + 0.5) / N_RAYS;
-      const p = TRAIL.getPoint(t);
-      const offX = (N.noise2(t * 17, 3) - 0.5) * 8;
-      const offZ = (N.noise2(t * 11, 7) - 0.5) * 8;
-      // ray is a tall thin quad
-      const w = 0.8 + N.noise2(t * 5, 1) * 1.2;
-      const h = 8 + N.noise2(t * 3, 2) * 6;
+      // random position in a 50x30x80 box around the cluster, biased
+      // toward the sun direction
+      const offX = (N.noise2(i * 0.41, 3) - 0.5) * 50;
+      const offY = 4 + N.noise2(i * 0.31, 7) * 10;
+      const offZ = (N.noise2(i * 0.27, 11) - 0.5) * 80;
+      const w = 1.5 + N.noise2(i * 0.19, 13) * 2.5;
+      const h = 14 + N.noise2(i * 0.13, 17) * 8;
       const geo = new THREE.PlaneGeometry(w, h, 1, 1);
-      const mat = new THREE.MeshBasicMaterial({
-        map: GODRAY_TEX,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        depthTest: true,
-        color: 0xfff2c8,
-        side: THREE.DoubleSide,
-        fog: true,
-        opacity: 0.35 + N.noise2(t * 9, 13) * 0.25,
-      });
+      const mat = makeGodRayMaterial();
       const m = new THREE.Mesh(geo, mat);
-      m.position.set(p.x + offX, terrainHeight(p.x, p.z) + h * 0.5, p.z + offZ);
-      // orient so the ray points along sunDir
+      m.position.set(clusterCenter.x + offX, offY, clusterCenter.z + offZ);
+      // orient so the ray's "up" axis is the sun's downward direction
       const yAxis = new THREE.Vector3(0, 1, 0);
-      const q = new THREE.Quaternion().setFromUnitVectors(yAxis, sunDir.clone().multiplyScalar(-1));
+      const q = new THREE.Quaternion().setFromUnitVectors(yAxis, sunDown);
       m.quaternion.copy(q);
-      // add some per-ray variation
       m.userData.basePos = m.position.clone();
-      m.userData.phase = N.noise2(t * 31, 19) * Math.PI * 2;
+      m.userData.phase = N.noise2(i * 0.51, 19) * Math.PI * 2;
       rays.push(m);
     }
     return rays;
