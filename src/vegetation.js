@@ -313,7 +313,11 @@ function buildCanopy(rng, cx, cy, cz, radius, density, variant) {
 
 function buildCanopyCluster(rng, cx, cy, cz, radius, density, variant) {
   const blobs = [];
-  const blobCount = 3 + Math.floor(rng() * 4);  // 3-6 blobs
+  // smaller clusters (sub-branch tips) need more blobs per unit
+  // volume to look like a leafy mass; larger canopies need fewer
+  const blobCount = radius > 1.5
+    ? 3 + Math.floor(rng() * 4)        // 3-6 for big canopies
+    : 4 + Math.floor(rng() * 4);       // 4-7 for small tip clusters
   // the dominant central blob
   blobs.push({
     pos: new THREE.Vector3(0, 0, 0),
@@ -335,7 +339,9 @@ function buildCanopyCluster(rng, cx, cy, cz, radius, density, variant) {
   }
   const geos = [];
   for (const B of blobs) {
-    const detail = 2 + (B.radius > radius * 0.6 ? 1 : 0);
+    // higher detail (3 instead of 2) gives the canopy more facets
+    // so it reads as a leafy mass instead of a faceted primitive
+    const detail = 3;
     const g = new THREE.IcosahedronGeometry(B.radius, detail);
     // per-blob noise displacement
     const pos = g.attributes.position;
@@ -600,10 +606,10 @@ function buildBroadleafTree(rng) {
       const subY = blen * (0.05 + rng() * 0.15);  // slight upward angle
       const subLen = blen * (0.4 + rng() * 0.3);
       const subR = br * (0.4 + rng() * 0.2);
-      const subLeafR = subLen * (0.45 + rng() * 0.25);
+      const subLeafR = subLen * (0.55 + rng() * 0.3);
       // build the sub-branch geometry (in local space of main branch)
       const subBranchGeo = buildBranch(rng, subLen, subR, 0.3);
-      const subLeafGeo = buildCanopyCluster(rng, subLen, 0, 0, subLeafR, 30, variant);
+      const subLeafGeo = buildCanopyCluster(rng, subLen, 0, 0, subLeafR, 80, variant);
       const subFull = mergeLite([subBranchGeo, subLeafGeo]);
       // position the sub-branch so its base is at (subX, subY, 0)
       // in the main branch's local frame, and rotates outward
