@@ -20,14 +20,20 @@ const N = makeNoise(7777);
 // surface looks weathered rather than perfect-cuboid. Vertex colors
 // are a mix of base stone, dirt, and moss.
 function makeStoneBlock(w, h, d, seed, moss = 0.0) {
-  const geo = new THREE.BoxGeometry(w, h, d, 4, 3, 4);
+  // higher subdivision so the normal map has fine surface detail
+  // to play against. The (6, 5, 6) segments give the box 6*5*2 + 6*6*2
+  // + 5*6*2 = 60+72+60 = 192 quads = 384 triangles, plenty for the
+  // normal-map effect.
+  const geo = new THREE.BoxGeometry(w, h, d, 6, 5, 6);
   const pos = geo.attributes.position;
   const v = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i);
+    // stronger noise displacement so the box surface has visible
+    // 3D relief, not just a flat decal
     const n =
-      N.fbm(v.x * 1.5 + seed, v.y * 1.5 + seed, 3) * 0.18 +
-      N.fbm(v.y * 3.0 + seed, v.z * 3.0, 3) * 0.08;
+      N.fbm(v.x * 2.0 + seed, v.y * 2.0 + seed, 3) * 0.22 +
+      N.fbm(v.y * 3.5 + seed, v.z * 3.5, 3) * 0.10;
     v.multiplyScalar(1 + n);
     pos.setXYZ(i, v.x, v.y, v.z);
   }
@@ -135,11 +141,73 @@ function makeColumn(radius, height, breakT, seed) {
   return geo;
 }
 
+// ---------- procedural stone normal map ----------
+// Cracks + chip pattern for the stone material. The cracks are a
+// high-frequency noise field thresholded into thin lines; the chips
+// are low-frequency variation. The map is a normal map (RGB =
+// surface normal in tangent space).
+function makeStoneNormalTexture() {
+  const S = 256;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(S, S);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const u = x / S, v = y / S;
+      // base normal: (0, 0, 1) in tangent space → (128, 128, 255)
+      let nx = N.fbm(u * 8, v * 8, 3) * 0.8;
+      let ny = N.fbm(u * 8 + 7, v * 8 + 7, 3) * 0.8;
+      // big cracks: low-frequency noise thresholded into wider lines
+      // so they're visible at 20m+ distance
+      const crackNoise1 = N.fbm(u * 6, v * 6, 4);
+      const crackMask1 = Math.max(0, 0.08 - Math.abs(crackNoise1));
+      const crackDir1 = Math.atan2(
+        N.noise2(u * 6 + 11, v * 6 + 11),
+        N.noise2(u * 6 + 17, v * 6 + 17),
+      );
+      nx += Math.cos(crackDir1) * crackMask1 * 8;
+      ny += Math.sin(crackDir1) * crackMask1 * 8;
+      // fine cracks: high-frequency noise for surface detail
+      const crackNoise2 = N.fbm(u * 30, v * 30, 4);
+      const crackMask2 = Math.max(0, 0.04 - Math.abs(crackNoise2));
+      const crackDir2 = Math.atan2(
+        N.noise2(u * 30 + 11, v * 30 + 11),
+        N.noise2(u * 30 + 17, v * 30 + 17),
+      );
+      nx += Math.cos(crackDir2) * crackMask2 * 4;
+      ny += Math.sin(crackDir2) * crackMask2 * 4;
+      // pack to 0-255
+      const r = Math.max(0, Math.min(255, 128 + nx * 50));
+      const g = Math.max(0, Math.min(255, 128 + ny * 50));
+      const b = 255;
+      const i = (y * S + x) * 4;
+      img.data[i]     = r;
+      img.data[i + 1] = g;
+      img.data[i + 2] = b;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1, 1);
+  return tex;
+}
+const STONE_NORMAL = makeStoneNormalTexture();
+
 // ---------- stone material (shared) ----------
+// Now uses MeshStandardMaterial with a procedural normal map for
+// proper PBR-style surface detail. The vertex colors still drive
+// the per-block weathering and moss tinting.
 function stoneMat() {
-  return new THREE.MeshLambertMaterial({
+  return new THREE.MeshStandardMaterial({
     vertexColors: true,
-    flatShading: true,
+    normalMap: STONE_NORMAL,
+    normalScale: new THREE.Vector2(1.4, 1.4),
+    roughness: 0.85,
+    metalness: 0.0,
+    flatShading: false,
   });
 }
 
