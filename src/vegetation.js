@@ -349,11 +349,14 @@ function buildCanopyCluster(rng, cx, cy, cz, radius, density, variant) {
     const offX = rng() * 100, offY = rng() * 100, offZ = rng() * 100;
     for (let j = 0; j < pos.count; j++) {
       v.fromBufferAttribute(pos, j);
-      // high-frequency bumpy noise to break the smooth sphere
+      // strong multi-octave noise to break the smooth sphere into a
+      // leafy, irregular silhouette. Bigger amplitude than typical
+      // for stylized icosahedrons so the canopy reads as a leafy
+      // mass rather than a smooth blob.
       const n =
-        N.fbm(v.x * 1.2 + offX, v.y * 1.2 + offY, 4) * 0.32 +
-        N.fbm(v.z * 2.4 + offZ, v.y * 2.4 + offY, 3) * 0.16 +
-        N.noise2(v.x * 4 + offX, v.y * 4 + offY) * 0.06;
+        N.fbm(v.x * 1.2 + offX, v.y * 1.2 + offY, 4) * 0.55 +
+        N.fbm(v.z * 2.4 + offZ, v.y * 2.4 + offY, 3) * 0.30 +
+        N.noise2(v.x * 4 + offX, v.y * 4 + offY) * 0.12;
       v.multiplyScalar(1 + n);
       // apply per-blob squash
       const sq = 0.7 + rng() * 0.4;
@@ -585,7 +588,7 @@ function buildBroadleafTree(rng) {
   // whole branch (sub-branches + main) to point outward and slightly
   // up from the trunk.
   const branches = [];
-  const branchCount = 3 + Math.floor(rng() * 2);   // 3-4 main branches (was 4-6)
+  const branchCount = 2 + Math.floor(rng() * 2);   // 2-3 main branches (was 3-4)
   const variant = rng() < 0.5 ? 0 : 1;
   for (let i = 0; i < branchCount; i++) {
     const t = 0.5 + rng() * 0.35;     // branches start halfway up
@@ -606,10 +609,10 @@ function buildBroadleafTree(rng) {
       const subY = blen * (0.05 + rng() * 0.15);  // slight upward angle
       const subLen = blen * (0.4 + rng() * 0.3);
       const subR = br * (0.4 + rng() * 0.2);
-      const subLeafR = subLen * (0.55 + rng() * 0.3);
+      const subLeafR = subLen * (0.50 + rng() * 0.25);
       // build the sub-branch geometry (in local space of main branch)
       const subBranchGeo = buildBranch(rng, subLen, subR, 0.3);
-      const subLeafGeo = buildCanopyCluster(rng, subLen, 0, 0, subLeafR, 80, variant);
+      const subLeafGeo = buildCanopyCluster(rng, subLen, 0, 0, subLeafR, 50, variant);
       const subFull = mergeLite([subBranchGeo, subLeafGeo]);
       // position the sub-branch so its base is at (subX, subY, 0)
       // in the main branch's local frame, and rotates outward
@@ -994,15 +997,15 @@ function buildUmbrella(rng) {
 
 const SPECIES = [
   { fn: buildPalmTree,        weight: 0.05, label: 'palm' },
-  { fn: buildBroadleafTree,   weight: 0.12, label: 'broadleaf' },
-  { fn: buildThinHardwood,    weight: 0.10, label: 'thin' },
-  { fn: buildStranglerFig,    weight: 0.04, label: 'fig' },
-  { fn: buildDeadSnag,        weight: 0.03, label: 'snag' },
-  { fn: buildFernTree,        weight: 0.04, label: 'fern-tree' },
+  { fn: buildBroadleafTree,   weight: 0.22, label: 'broadleaf' },
+  { fn: buildThinHardwood,    weight: 0.18, label: 'thin' },
+  { fn: buildStranglerFig,    weight: 0.05, label: 'fig' },
+  { fn: buildDeadSnag,        weight: 0.04, label: 'snag' },
+  { fn: buildFernTree,        weight: 0.06, label: 'fern-tree' },
   { fn: buildShrub,           weight: 0.14, label: 'shrub' },
-  { fn: buildWallTree,        weight: 0.18, label: 'wall' },
-  { fn: buildUmbrella,        weight: 0.15, label: 'umbrella' },
-  { fn: buildGroundCover,     weight: 0.15, label: 'groundcover' },
+  { fn: buildWallTree,        weight: 0.05, label: 'wall' },
+  { fn: buildUmbrella,        weight: 0.10, label: 'umbrella' },
+  { fn: buildGroundCover,     weight: 0.11, label: 'groundcover' },
 ];
 
 function pickSpecies(rng) {
@@ -1457,14 +1460,15 @@ function scatterUnderstory(scene, opts) {
 
 // ---------- public entry ----------
 export function populateVegetation(scene) {
-  // trees - dense scatter with wall + umbrella + groundcover species
-  // filling the eye-level view from the trail. 700 trees balances
-  // density against the heavy L-system broadleaf geometry.
+  // trees - dense scatter with broadleaf and thin hardwood as the
+  // primary species. minRadius 2.5 keeps trees away from the trail
+  // edge so the player can see forward; treeSpacing 1.4 prevents
+  // overlapping canopies.
   const treeCount = scatterTrees(scene, {
-    minRadius: 1.2,
-    treeSpacing: 1.0,
-    density: 1.2,
-    maxCount: 700,
+    minRadius: 2.5,
+    treeSpacing: 1.4,
+    density: 1.0,
+    maxCount: 600,
   });
   // understory
   scatterUnderstory(scene, {
