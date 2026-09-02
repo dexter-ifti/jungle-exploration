@@ -23,8 +23,9 @@ import('./sound.js').then(mod => {
   addEventListener('keydown', start);
 });
 
-// render-harness hook (no gameplay effect)
-window.__setT = v => { t = Math.min(Math.max(v, 0.0), 0.985); };
+// render-harness hook (no gameplay effect) — t wraps mod 1 since
+// the trail is now a closed loop
+window.__setT = v => { t = ((v % 1) + 1) % 1; };
 
 // HUD: start at full opacity, fade to barely-visible after 6s, hide
 // entirely on first keypress so it doesn't compete with the view.
@@ -61,7 +62,10 @@ function animate() {
   const speed = (keys['ShiftLeft'] ? 4.2 : 1.7);
   if (keys['KeyW'] || keys['ArrowUp']) t += dt * speed / 320;
   if (keys['KeyS'] || keys['ArrowDown']) t -= dt * speed / 320;
-  t = THREE.MathUtils.clamp(t, 0.0, 0.985);
+  // Closed loop: t wraps mod 1 so the player can walk all the way
+  // around the circuit and end up at the same point. Walking in
+  // either direction brings you to the falls (t=0.5) at some point.
+  t = ((t % 1) + 1) % 1;
   // lateral movement (A/D or Left/Right) — strafe perpendicular to the
   // current path direction. Decays toward 0 so the player doesn't drift
   // off and forget where they are.
@@ -74,8 +78,8 @@ function animate() {
   strafe -= strafe * Math.min(1, dt * 0.25);
 
   const p = TRAIL.getPointAt(t);
-  const ahead = TRAIL.getPointAt(Math.min(t + 0.01, 1));
-  const lookT = Math.min(t + 0.025, 1);
+  const ahead = TRAIL.getPointAt(t + 0.01);
+  const lookT = t + 0.025;
   const look = TRAIL.getPointAt(lookT);
   // forward direction in the xz plane (ignore y), then right = forward x up
   _forward.set(look.x - p.x, 0, look.z - p.z).normalize();

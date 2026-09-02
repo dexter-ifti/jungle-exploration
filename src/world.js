@@ -44,23 +44,51 @@ function makeNoise(seed) {
 const N = makeNoise(1337);
 export { makeNoise };
 
-// ---------- trail spline: winding path from origin to the falls ----------
+// ---------- trail spline: a closed loop where the player can walk
+// in either direction and end up at the same point. The trail is a
+// circuit: start at the trailhead, meander through the jungle, reach
+// the falls (the midpoint of the loop), continue around the back
+// side of the world, and return to the trailhead. Walking in either
+// direction brings you to the falls.
 function buildTrail() {
   const pts = [];
-  const n = 140;
+  const n = 280;
+  // the trail is a closed loop. t=0 and t=1 are the trailhead (start).
+  // t=0.5 is the falls. the loop goes: trailhead -> falls -> return
+  // leg back to trailhead. the return leg swings out wide in x but
+  // stays within the world bounds (WORLD.size/2 = 320m from center).
   for (let i = 0; i <= n; i++) {
     const t = i / n;
-    const z = THREE.MathUtils.lerp(60, WORLD.waterfallZ + 18, t);
-    // large meanders + smaller wander, damped near the clearing
-    const damp = THREE.MathUtils.smoothstep(t, 0.72, 0.95); // straightens into the clearing
+    // z oscillates: t=0 (trailhead, z=60) -> t=0.5 (falls, z=waterfallZ+18)
+    // -> t=1 (back to trailhead, z=60). Use a half-cosine so the
+    // walk is forward then back in z.
+    const zPhase = 1 - Math.cos(t * Math.PI * 2) * 0.5;  // 0 at t=0, 1 at t=0.5, 0 at t=1
+    const z = THREE.MathUtils.lerp(60, WORLD.waterfallZ + 18, zPhase);
+    // x: large meander on the forward leg, swing out wide on the
+    // return leg (so the loop forms a clear circuit in the world)
+    const isReturn = t > 0.55;
+    const damp = THREE.MathUtils.smoothstep(t, 0.72, 0.95) * (1 - isReturn);
+    // on the return leg, sweep the trail in a big arc to the east
+    // of the world so the loop is visibly a circuit
+    const returnT = (t - 0.55) / 0.45;  // 0 at t=0.55, 1 at t=1
+    const returnArc = isReturn
+      ? Math.sin(returnT * Math.PI) * 90 - 20   // arc from -20 to +70 in x
+      : 0;
+    const sign = isReturn ? -1 : 1;
     const x =
-      Math.sin(t * Math.PI * 2.35 + 0.7) * 34 * (1 - damp * 0.9) +
-      Math.sin(t * Math.PI * 7.1 + 2.3) * 8 * (1 - damp * 0.85) +
-      Math.sin(t * Math.PI * 13.7) * 2.2 * (1 - damp) +
-      (N.fbm(t * 3.1, 11.3, 3) * 6) * (1 - damp * 0.7);
+      sign * (
+        Math.sin(t * Math.PI * 2.35 + 0.7) * 34 * (1 - damp * 0.9) +
+        Math.sin(t * Math.PI * 7.1 + 2.3) * 8 * (1 - damp * 0.85) +
+        Math.sin(t * Math.PI * 13.7) * 2.2 * (1 - damp) +
+        (N.fbm(t * 3.1, 11.3, 3) * 6) * (1 - damp * 0.7)
+      ) + returnArc;
     pts.push(new THREE.Vector3(x, 0, z));
   }
-  return new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+  // closed=true: the spline wraps from the last point back to the
+  // first, forming a loop. CatmullRomCurve3 with closed=true ensures
+  // the player can walk all the way around the spline and end up
+  // where they started.
+  return new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.5);
 }
 
 export const TRAIL = buildTrail();
