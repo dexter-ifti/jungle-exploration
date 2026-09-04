@@ -45,8 +45,10 @@ const N2 = makeNoise(20240615);
 const N3 = makeNoise(88442211);
 
 // ---------- procedural leaf texture (canopy) ----------
-// Solid green with darker veins. Fully opaque (no alpha cutout) so the
-// canopy reads as a solid mass of leaves from a distance.
+// Leaf card texture: a single leaf shape with a leaf-shaped alpha
+// mask, green color with darker veins. The shape mask makes the
+// quad read as an actual leaf, not a billboard square. Used by
+// the sub-branch leaf clusters for a more "real leaf" reading.
 function makeLeafTexture(variant = 0) {
   const S = 256;
   const cv = document.createElement('canvas'); cv.width = cv.height = S;
@@ -57,32 +59,31 @@ function makeLeafTexture(variant = 0) {
     ? { r: 56, g: 102, b: 44 }   // dark waxy
     : { r: 92, g: 132, b: 56 };  // pale young
   const dark = { r: 22, g: 50, b: 22 };
-  const mid  = { r: 70, g: 110, b: 50 };
   for (let y = 0; y < S; y++) {
     for (let x = 0; x < S; x++) {
       const u = x / S, v = y / S;
-      const n = N.fbm(u * 8 + variant * 5, v * 8 - variant * 3, 4);
-      const n2 = N.noise2(x * 1.4, y * 1.4);
-      // base mix
-      const t = n * 0.5 + 0.5;
-      let r = (1 - t) * dark.r + t * base.r;
-      let g = (1 - t) * dark.g + t * base.g;
-      let b = (1 - t) * dark.b + t * base.b;
-      // mid-tone speckle
-      const speck = (N.fbm(u * 28, v * 28, 3) - 0.3) * 30;
-      r += speck; g += speck * 1.2; b += speck * 0.6;
-      // fine grain
-      const grain = n2 * 16;
-      r += grain; g += grain * 0.7; b += grain * 0.4;
-      // clamp
-      r = Math.max(0, Math.min(255, r));
-      g = Math.max(0, Math.min(255, g));
-      b = Math.max(0, Math.min(255, b));
+      // leaf-shape mask: a pointed-oval silhouette, wider in the
+      // middle, tapered at top and bottom. Full alpha inside, zero
+      // outside. This makes the card read as a leaf shape.
+      const dx = (u - 0.5) * 2;
+      const dy = (v - 0.5) * 2;
+      const r2 = dx * dx + dy * dy * (1.0 + dx * 0.6);
+      const leafMask = Math.max(0, 1 - r2 * 1.6);
+      // veins: dark center line + 2 branching lines
+      const veinCenter = Math.exp(-Math.abs(dx) * 30) * (1 - dy * dy * 0.5);
+      const veinSide1 = Math.exp(-Math.abs(dx - 0.25 * (1 + dy)) * 50) * (1 - dy * dy);
+      const veinSide2 = Math.exp(-Math.abs(dx + 0.25 * (1 + dy)) * 50) * (1 - dy * dy);
+      const vein = Math.max(0, veinCenter - 0.5) + Math.max(0, veinSide1 - 0.5) + Math.max(0, veinSide2 - 0.5);
+      // color: dark at veins, base at center of leaf
+      const r = dark.r * vein + base.r * (1 - vein);
+      const g = dark.g * vein + base.g * (1 - vein);
+      const b = dark.b * vein + base.b * (1 - vein);
+      const a = leafMask > 0 ? 255 : 0;
       const i = (y * S + x) * 4;
-      img.data[i] = r;
-      img.data[i + 1] = g;
-      img.data[i + 2] = b;
-      img.data[i + 3] = 255; // fully opaque
+      img.data[i]     = Math.round(r);
+      img.data[i + 1] = Math.round(g);
+      img.data[i + 2] = Math.round(b);
+      img.data[i + 3] = Math.round(a);
     }
   }
   ctx.putImageData(img, 0, 0);
@@ -256,6 +257,12 @@ function buildButtresses(rng, baseR, count) {
 
 // ---------- generic mesh merger (positions + normals) ----------
 function mergeLite(geos) {
+  // determine if any of the source geometries has UVs; if so,
+  // allocate a UV array and copy them through. Without this the
+  // texture map (e.g. for leaf cards) samples at the default
+  // UV which is invalid for merged geometry, producing a solid
+  // color rather than the texture.
+  const hasUVs = geos.some(g => g.attributes.uv);
   let vCount = 0;
   const all = [];
   for (const g of geos) {
@@ -265,15 +272,21 @@ function mergeLite(geos) {
   }
   const pos = new Float32Array(vCount * 3);
   const nor = new Float32Array(vCount * 3);
-  let o = 0;
+  const uv  = hasUVs ? new Float32Array(vCount * 2) : null;
+  let o = 0, ou = 0;
   for (const gg of all) {
     pos.set(gg.attributes.position.array, o);
     if (gg.attributes.normal) nor.set(gg.attributes.normal.array, o);
+    if (uv && gg.attributes.uv) {
+      uv.set(gg.attributes.uv.array, ou);
+      ou += gg.attributes.uv.array.length;
+    }
     o += gg.attributes.position.array.length;
   }
   const out = new THREE.BufferGeometry();
   out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  if (uv) out.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   out.computeBoundingSphere();
   out.computeBoundingBox();
   return out;
@@ -388,6 +401,74 @@ function buildCanopyCluster(rng, cx, cy, cz, radius, density, variant) {
   const merged = mergeLite(geos);
   merged.computeBoundingSphere();
   merged.computeBoundingBox();
+  return merged;
+}
+
+// ---------- leaf-card cluster (the proper "real leaves" approach) ----
+// A cloud of small alpha-tested quads at a branch tip. Each quad has
+// the leaf-texture (with the leaf-shaped alpha mask) so it reads as
+// a single leaf, not a billboard square. Multiple quads at random
+// rotations form a bouquet that reads as a leafy mass from any
+// distance. Much more "real leaves" than the icosahedron-blob
+// approach used by buildCanopyCluster.
+const LEAF_CARD_MATS = [
+  new THREE.MeshStandardMaterial({
+    map: LEAF_TEXTURES[0],
+    transparent: false,
+    alphaTest: 0.4,
+    side: THREE.DoubleSide,
+    color: 0xffffff,
+    roughness: 0.9,
+    metalness: 0.0,
+  }),
+  new THREE.MeshStandardMaterial({
+    map: LEAF_TEXTURES[1],
+    transparent: false,
+    alphaTest: 0.4,
+    side: THREE.DoubleSide,
+    color: 0xffffff,
+    roughness: 0.9,
+    metalness: 0.0,
+  }),
+];
+
+function buildLeafCardCluster(rng, cx, cy, cz, radius, count, variant) {
+  const geos = [];
+  // build `count` leaf cards, each at a random position on a sphere
+  // shell and a random orientation. Each card is large enough to be
+  // visible at typical viewing distance.
+  for (let i = 0; i < count; i++) {
+    const u = rng(), v = rng(), w = rng();
+    const theta = u * Math.PI * 2;
+    const phi = Math.acos(2 * v - 1);
+    // smaller r (closer to center) so the cluster is denser
+    const r = radius * (0.45 + 0.35 * w);
+    const px = cx + r * Math.sin(phi) * Math.cos(theta);
+    const py = cy + r * Math.cos(phi) * 0.6;
+    const pz = cz + r * Math.sin(phi) * Math.sin(theta);
+    // outward direction (the card's normal points outward)
+    const nx = (px - cx) / r, ny = (py - cy) / r * 0.6, nz = (pz - cz) / r;
+    // build a large quad facing outward. Each card is 0.8-1.1 of the
+    // cluster radius so a 1m cluster has ~1m cards that visibly
+    // overlap, filling the cluster space with leaf shapes.
+    const leafSize = radius * (0.8 + rng() * 0.3);
+    const geo = new THREE.PlaneGeometry(leafSize, leafSize * 1.4);
+    // orient: build a rotation that maps the PlaneGeometry's +Z
+    // (its normal) to the outward direction, with a random twist
+    const fwd = new THREE.Vector3(nx, ny, nz).normalize();
+    const q = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 0, 1), fwd
+    );
+    const twist = new THREE.Quaternion().setFromAxisAngle(
+      fwd, rng() * Math.PI * 2
+    );
+    q.premultiply(twist);
+    geo.applyQuaternion(q);
+    geo.translate(px, py, pz);
+    geos.push(geo);
+  }
+  const merged = mergeLite(geos);
+  merged.computeBoundingSphere();
   return merged;
 }
 
@@ -612,7 +693,11 @@ function buildBroadleafTree(rng) {
       const subLeafR = subLen * (0.50 + rng() * 0.25);
       // build the sub-branch geometry (in local space of main branch)
       const subBranchGeo = buildBranch(rng, subLen, subR, 0.3);
-      const subLeafGeo = buildCanopyCluster(rng, subLen, 0, 0, subLeafR, 50, variant);
+      // use leaf-card cluster instead of icosahedron blob for the
+      // branch tip. The leaf cards have a leaf-shaped alpha mask
+      // so the tip reads as a mass of individual leaves, not a
+      // smooth 3D primitive.
+      const subLeafGeo = buildLeafCardCluster(rng, subLen, 0, 0, subLeafR * 1.4, 40, variant);
       const subFull = mergeLite([subBranchGeo, subLeafGeo]);
       // position the sub-branch so its base is at (subX, subY, 0)
       // in the main branch's local frame, and rotates outward
@@ -651,7 +736,7 @@ function buildBroadleafTree(rng) {
   // a small central upper-canopy cluster so the tree's top doesn't
   // look bare when seen from above
   const upperCrownR = 1.2 + rng() * 0.6;
-  const upperCrown = buildCanopyCluster(rng, 0, h * 0.85, 0, upperCrownR, 60, variant);
+  const upperCrown = buildLeafCardCluster(rng, 0, h * 0.85, 0, upperCrownR * 1.4, 60, variant);
   return { trunk: trunkFull, crown: upperCrown, variant, height: h, baseR: r0 };
 }
 
@@ -1259,15 +1344,33 @@ function scatterTrees(scene, opts) {
     // crown
     let crownMesh = null;
     if (tree.crown && tree.crown.attributes.position.count > 0) {
-      const cm = CANOPY_MATS[tree.variant].clone();
-      // small per-instance color variation
+      // use the leaf-card material for the crown (with the leaf-texture
+      // map and alpha cutout), not the icosahedron-blob Lambert material.
+      // CANOPY_MATS is kept for non-broadleaf species that still use
+      // buildCanopyCluster; for broadleaf the new buildLeafCardCluster
+      // produces geometry that needs the leaf-card material to render
+      // with a visible texture.
+      const cm = LEAF_CARD_MATS[tree.variant].clone();
+      // material.clone() does NOT always preserve alphaTest, so set it
+      // explicitly to ensure the leaf-shaped alpha mask cuts out the
+      // card outside the leaf silhouette. Also disable depthWrite so
+      // the cards don't z-fight with each other.
+      cm.alphaTest = 0.4;
+      cm.depthWrite = false;
+      cm.polygonOffset = true;
+      cm.polygonOffsetFactor = -1;
+      cm.polygonOffsetUnits = -1;
+      // small per-instance color variation (this multiplies the texture)
       cm.color = new THREE.Color().setHSL(
         0.27 + (localRng() - 0.5) * 0.05,
         0.45 + localRng() * 0.2,
         0.5 + (localRng() - 0.5) * 0.12,
       );
+      cm.needsUpdate = true;
       crownMesh = new THREE.Mesh(tree.crown, cm);
-      crownMesh.castShadow = true;
+      crownMesh.castShadow = false;
+      // leaf cards use alphaTest, so depth handling needs care
+      crownMesh.receiveShadow = false;
       // canopies are dense meshes that would self-shadow heavily with
       // the current shadow setup, making them look like dark blobs.
       // Disable receiveShadow so the lit side stays bright even where
