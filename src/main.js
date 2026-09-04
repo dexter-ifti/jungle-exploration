@@ -9,8 +9,9 @@ window.__renderer = renderer;
 // expose THREE for debug
 import * as __THREE from 'three';
 window.__THREE = __THREE;
-// System 6: procedural sound (needs a user gesture to start; clicks
-// anywhere on the page will start the audio context)
+
+// System 6: procedural sound (needs a user gesture to start; clicks,
+// keypresses, or mobile touches anywhere on the page will start audio)
 let sound = null;
 import('./sound.js').then(mod => {
   sound = new mod.JungleSound(camera);
@@ -18,25 +19,44 @@ import('./sound.js').then(mod => {
     sound.start();
     removeEventListener('click', start);
     removeEventListener('keydown', start);
+    removeEventListener('touchstart', start);
   };
   addEventListener('click', start);
   addEventListener('keydown', start);
+  addEventListener('touchstart', start, { passive: true });
 });
 
+// Mobile vs Desktop input detection & HUD setup
+const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+const hudDesktop = document.getElementById('hud-desktop');
+const hudMobile = document.getElementById('hud-mobile');
+const mobileHints = document.getElementById('mobile-hints');
+
+if (isTouchDevice) {
+  if (hudDesktop) hudDesktop.style.display = 'none';
+  if (hudMobile) hudMobile.style.display = 'block';
+  if (mobileHints) mobileHints.style.display = 'flex';
+}
+
 // HUD: start at full opacity, fade to barely-visible after 6s, hide
-// entirely on first keypress so it doesn't compete with the view.
+// entirely on first user interaction so it doesn't compete with the view.
 const hud = document.getElementById('hud');
 if (hud) {
   setTimeout(() => hud.classList.add('fade'), 6000);
-  const dismiss = () => { hud.classList.add('gone'); };
+  const dismiss = () => {
+    hud.classList.add('gone');
+    if (mobileHints) mobileHints.classList.add('gone');
+  };
   addEventListener('keydown', dismiss, { once: true });
   addEventListener('mousedown', dismiss, { once: true });
+  addEventListener('touchstart', dismiss, { once: true, passive: true });
 }
 
 // player walks the trail spline with organic humanoid motion:
 // - continuous velocity acceleration & momentum deceleration
 // - full lateral strafe & roaming across the path (non-springy)
-// - mouse look (pointer lock + drag) and arrow key turning
+// - mouse look (pointer lock + drag) and arrow key turning (PC)
+// - dynamic virtual thumbstick and smooth touch-swipe look (Mobile)
 // - human gait biomechanics: smooth double-harmonic vertical bob,
 //   single-harmonic lateral hip sway, head roll banking, heel-strike pitch dip
 // - living idle motion (breathing & relaxed postural sway)
@@ -67,9 +87,9 @@ let isDragging = false;
 let prevMouseX = 0;
 let prevMouseY = 0;
 
-// Pointer lock for immersive first-person look on click
+// Pointer lock for immersive first-person look on click (desktop)
 renderer.domElement.addEventListener('click', () => {
-  if (document.pointerLockElement !== renderer.domElement) {
+  if (!isTouchDevice && document.pointerLockElement !== renderer.domElement) {
     renderer.domElement.requestPointerLock?.();
   }
 });
@@ -78,7 +98,7 @@ document.addEventListener('pointerlockchange', () => {
   isPointerLocked = (document.pointerLockElement === renderer.domElement);
 });
 
-// Mouse look: supports both pointer-lock and drag
+// Desktop mouse look: supports both pointer-lock and drag
 addEventListener('mousemove', e => {
   if (isPointerLocked) {
     lookYaw -= e.movementX * 0.0022;
@@ -109,9 +129,115 @@ addEventListener('mouseup', () => {
   isDragging = false;
 });
 
+// Desktop keyboard controls
 const keys = {};
 addEventListener('keydown', e => keys[e.code] = true);
 addEventListener('keyup', e => keys[e.code] = false);
+
+// ---------- Mobile Touch Controls ----------
+// Dual-zone touch system:
+// Left half of screen = dynamic virtual joystick (walk / strafe / sprint)
+// Right half of screen = touch drag camera look (yaw & pitch)
+let moveTouchId = null;
+let lookTouchId = null;
+const moveOrigin = { x: 0, y: 0 };
+const moveVec = { x: 0, y: 0 }; // x: strafe (-1..1), y: forward/back (-1..1)
+let moveIsRunning = false;
+let prevTouchLookX = 0;
+let prevTouchLookY = 0;
+
+const joystickEl = document.getElementById('touch-joystick');
+const knobEl = document.getElementById('touch-knob');
+const JOYSTICK_MAX_RADIUS = 46; // maximum joystick handle travel in px
+
+addEventListener('touchstart', e => {
+  e.preventDefault();
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    const touch = e.changedTouches[i];
+    const halfWidth = window.innerWidth * 0.5;
+
+    // Left half: movement joystick
+    if (touch.clientX < halfWidth) {
+      if (moveTouchId === null) {
+        moveTouchId = touch.identifier;
+        moveOrigin.x = touch.clientX;
+        moveOrigin.y = touch.clientY;
+        moveVec.x = 0;
+        moveVec.y = 0;
+        moveIsRunning = false;
+        if (joystickEl && knobEl) {
+          joystickEl.style.left = `${touch.clientX}px`;
+          joystickEl.style.top = `${touch.clientY}px`;
+          joystickEl.style.display = 'block';
+          knobEl.style.transform = `translate(0px, 0px)`;
+        }
+      }
+    } else {
+      // Right half: camera look
+      if (lookTouchId === null) {
+        lookTouchId = touch.identifier;
+        prevTouchLookX = touch.clientX;
+        prevTouchLookY = touch.clientY;
+      }
+    }
+  }
+}, { passive: false });
+
+addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    const touch = e.changedTouches[i];
+
+    if (touch.identifier === moveTouchId) {
+      const dx = touch.clientX - moveOrigin.x;
+      const dy = touch.clientY - moveOrigin.y;
+      const dist = Math.hypot(dx, dy);
+      const angle = Math.atan2(dy, dx);
+      const clampedDist = Math.min(dist, JOYSTICK_MAX_RADIUS);
+      const kx = Math.cos(angle) * clampedDist;
+      const ky = Math.sin(angle) * clampedDist;
+
+      if (knobEl) {
+        knobEl.style.transform = `translate(${kx}px, ${ky}px)`;
+      }
+
+      const normDist = clampedDist / JOYSTICK_MAX_RADIUS;
+      // dx > 0 = strafe right (+x), dy < 0 = forward (+y)
+      moveVec.x = kx / JOYSTICK_MAX_RADIUS;
+      moveVec.y = -ky / JOYSTICK_MAX_RADIUS;
+      moveIsRunning = (normDist > 0.82);
+    } else if (touch.identifier === lookTouchId) {
+      const dx = touch.clientX - prevTouchLookX;
+      const dy = touch.clientY - prevTouchLookY;
+      prevTouchLookX = touch.clientX;
+      prevTouchLookY = touch.clientY;
+
+      lookYaw -= dx * 0.0042;
+      lookPitch -= dy * 0.0036;
+      lookPitch = THREE.MathUtils.clamp(lookPitch, -Math.PI * 0.42, Math.PI * 0.42);
+      lastLookInputTime = performance.now();
+    }
+  }
+}, { passive: false });
+
+const handleTouchEnd = e => {
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    const touch = e.changedTouches[i];
+    if (touch.identifier === moveTouchId) {
+      moveTouchId = null;
+      moveVec.x = 0;
+      moveVec.y = 0;
+      moveIsRunning = false;
+      if (joystickEl) {
+        joystickEl.style.display = 'none';
+      }
+    } else if (touch.identifier === lookTouchId) {
+      lookTouchId = null;
+    }
+  }
+};
+addEventListener('touchend', handleTouchEnd, { passive: true });
+addEventListener('touchcancel', handleTouchEnd, { passive: true });
 
 // render-harness hook (no gameplay effect) — resets state for deterministic renders
 window.__setT = v => {
@@ -142,12 +268,16 @@ function animate() {
   // System 6: update sound (spatial volumes based on player t)
   if (sound) sound.update(t, dt);
 
-  // -------- keyboard input --------
-  const wantFwd = keys['KeyW'] ? 1 : 0;
-  const wantBack = keys['KeyS'] ? 1 : 0;
-  const wantStrafeL = keys['KeyA'] ? 1 : 0;
-  const wantStrafeR = keys['KeyD'] ? 1 : 0;
-  const running = !!(keys['ShiftLeft'] || keys['ShiftRight']);
+  // -------- combined movement input (keyboard + mobile touch) --------
+  let fwdInput = (keys['KeyW'] ? 1 : 0) - (keys['KeyS'] ? 1 : 0);
+  let strafeInput = (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0);
+  let running = !!(keys['ShiftLeft'] || keys['ShiftRight']);
+
+  if (moveTouchId !== null) {
+    if (Math.abs(moveVec.y) > 0.06) fwdInput = moveVec.y;
+    if (Math.abs(moveVec.x) > 0.06) strafeInput = moveVec.x;
+    if (moveIsRunning) running = true;
+  }
 
   // Keyboard camera turning (Arrow keys or Q/E)
   const turnSpeed = 1.8;
@@ -171,15 +301,15 @@ function animate() {
   }
 
   // Gentle auto-recenter when moving forward without active look input
-  if (wantFwd && performance.now() - lastLookInputTime > 2000) {
+  const isMovingForward = fwdInput > 0.2;
+  if (isMovingForward && performance.now() - lastLookInputTime > 2000) {
     lookYaw = THREE.MathUtils.damp(lookYaw, 0, 1.2, dt);
     lookPitch = THREE.MathUtils.damp(lookPitch, 0, 1.5, dt);
   }
 
   // -------- forward/backward trail motion --------
   const maxV = running ? TRAIL_MAX_RUN : TRAIL_MAX_WALK;
-  const dir = wantFwd - wantBack;
-  const targetVel = dir * maxV;
+  const targetVel = fwdInput * maxV;
 
   if (targetVel !== 0) {
     const sign = Math.sign(targetVel - trailVel);
@@ -191,10 +321,9 @@ function animate() {
   trailVel = THREE.MathUtils.clamp(trailVel, -maxV, maxV);
 
   // -------- lateral strafe motion (persistent, non-springy) --------
-  const wantStrafe = wantStrafeR - wantStrafeL;
   const maxStrafeV = running ? STRAFE_SPEED_RUN : STRAFE_SPEED_WALK;
-  const targetStrafeVel = wantStrafe * maxStrafeV;
-  const strafeRate = wantStrafe !== 0 ? 10.0 : 12.0;
+  const targetStrafeVel = strafeInput * maxStrafeV;
+  const strafeRate = strafeInput !== 0 ? 10.0 : 12.0;
 
   strafeVel = THREE.MathUtils.damp(strafeVel, targetStrafeVel, strafeRate, dt);
   strafe += strafeVel * dt;
@@ -303,5 +432,6 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, window.innerWidth < 768 ? 1.5 : 2));
   postprocess.setSize(innerWidth, innerHeight);
 });

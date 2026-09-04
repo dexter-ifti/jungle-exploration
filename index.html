@@ -2,39 +2,121 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0d08">
 <title>Jungle</title>
 <style>
-  html, body { margin: 0; padding: 0; overflow: hidden; background: #0a0d08; }
-  canvas { display: block; }
+  * {
+    box-sizing: border-box;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #0a0d08;
+    width: 100%;
+    height: 100%;
+    position: fixed;
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+  }
   #hud {
     position: fixed;
-    top: 16px;
-    left: 16px;
+    top: env(safe-area-inset-top, 16px);
+    left: env(safe-area-inset-left, 16px);
+    margin: 16px;
     padding: 10px 14px;
-    background: rgba(10, 14, 10, 0.62);
+    background: rgba(10, 14, 10, 0.72);
     color: #d8e0c4;
     font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     border: 1px solid rgba(216, 224, 196, 0.18);
-    border-radius: 4px;
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
+    border-radius: 6px;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     pointer-events: none;
     transition: opacity 1.2s ease-out;
     user-select: none;
     z-index: 10;
+    max-width: calc(100vw - 32px);
   }
-  #hud.fade { opacity: 0.18; }
+  #hud.fade { opacity: 0.22; }
   #hud.gone { opacity: 0; }
   #hud b { color: #f0e8c4; font-weight: 600; }
-  #hud .row { white-space: nowrap; }
+  #hud .row { white-space: normal; }
   #hud .row + .row { margin-top: 2px; }
+
+  /* Virtual Touch Joystick */
+  #touch-joystick {
+    position: fixed;
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.08) 0%, rgba(15, 25, 12, 0.45) 100%);
+    border: 2px solid rgba(170, 220, 130, 0.35);
+    pointer-events: none;
+    display: none;
+    transform: translate(-50%, -50%);
+    z-index: 25;
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  }
+  #touch-knob {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    margin-left: -22px;
+    margin-top: -22px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #8bc34a 0%, #467926 100%);
+    box-shadow: 0 0 14px rgba(139, 195, 74, 0.65);
+    border: 1.5px solid rgba(255, 255, 255, 0.5);
+    pointer-events: none;
+    will-change: transform;
+  }
+  /* Mobile touch zone guides (fades away) */
+  #mobile-hints {
+    position: fixed;
+    bottom: max(env(safe-area-inset-bottom, 20px), 20px);
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 32px;
+    pointer-events: none;
+    z-index: 8;
+    color: rgba(220, 235, 200, 0.38);
+    font: 11px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    transition: opacity 1.5s ease-out;
+  }
+  #mobile-hints.gone { opacity: 0; }
 </style>
 </head>
 <body>
 <div id="hud">
-  <div class="row"><b>WASD</b> &nbsp; walk / strafe &nbsp;&middot;&nbsp; <b>Mouse / Arrows</b> &nbsp; look around &nbsp;&middot;&nbsp; <b>Shift</b> &nbsp; run</div>
+  <div class="row" id="hud-desktop"><b>WASD</b> &nbsp; walk / strafe &nbsp;&middot;&nbsp; <b>Mouse / Arrows</b> &nbsp; look around &nbsp;&middot;&nbsp; <b>Shift</b> &nbsp; run</div>
+  <div class="row" id="hud-mobile" style="display:none"><b>Left Touch</b> &nbsp; walk / strafe &nbsp;&middot;&nbsp; <b>Right Touch</b> &nbsp; look around</div>
   <div class="row">follow the trail to the ancient temple and falls</div>
+</div>
+<div id="touch-joystick"><div id="touch-knob"></div></div>
+<div id="mobile-hints" style="display:none">
+  <div>✢ Left: Move</div>
+  <div>◎ Right: Look</div>
 </div>
 <script type="module" src="./src/main.js"></script>
 </body>
