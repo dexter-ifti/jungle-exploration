@@ -294,9 +294,11 @@ function buildPool(scene) {
   }
   geo.computeVertexNormals();
   POOL_TEX.repeat.set(2, 2);
-  const mat = new THREE.MeshLambertMaterial({
+  const mat = new THREE.MeshStandardMaterial({
     map: POOL_TEX,
-    color: 0xb8d4e0,
+    color: 0x7ab6cc,
+    roughness: 0.16,
+    metalness: 0.08,
     transparent: true,
     opacity: 0.88,
     side: THREE.DoubleSide,
@@ -315,7 +317,7 @@ function buildPool(scene) {
 function buildSplashParticles(scene) {
   const cliffZ = WORLD.waterfallZ;
   const centerX = TRAIL.getPoint(1).x * 0.5;
-  const N_PART = 220;
+  const N_PART = 340;
   const positions = new Float32Array(N_PART * 3);
   const seeds = new Float32Array(N_PART);
   const poolY = terrainHeight(centerX, cliffZ + 6) + 0.1;
@@ -380,7 +382,7 @@ function addWetRocks(scene) {
       colors[k + 2] = 0.22;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.32, metalness: 0.04 });
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, terrainHeight(x, z) + 0.02, z);
     m.receiveShadow = true;
