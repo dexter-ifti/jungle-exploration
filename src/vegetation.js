@@ -53,40 +53,32 @@ function makeLeafTexture(variant = 0) {
   const S = 256;
   const cv = document.createElement('canvas'); cv.width = cv.height = S;
   const ctx = cv.getContext('2d');
-  const img = ctx.createImageData(S, S);
-  // base palette by variant
-  const base = variant === 0
-    ? { r: 56, g: 102, b: 44 }   // dark waxy
-    : { r: 92, g: 132, b: 56 };  // pale young
-  const dark = { r: 22, g: 50, b: 22 };
-  for (let y = 0; y < S; y++) {
-    for (let x = 0; x < S; x++) {
-      const u = x / S, v = y / S;
-      // leaf-shape mask: a pointed-oval silhouette, wider in the
-      // middle, tapered at top and bottom. Full alpha inside, zero
-      // outside. This makes the card read as a leaf shape.
-      const dx = (u - 0.5) * 2;
-      const dy = (v - 0.5) * 2;
-      const r2 = dx * dx + dy * dy * (1.0 + dx * 0.6);
-      const leafMask = Math.max(0, 1 - r2 * 1.6);
-      // veins: dark center line + 2 branching lines
-      const veinCenter = Math.exp(-Math.abs(dx) * 30) * (1 - dy * dy * 0.5);
-      const veinSide1 = Math.exp(-Math.abs(dx - 0.25 * (1 + dy)) * 50) * (1 - dy * dy);
-      const veinSide2 = Math.exp(-Math.abs(dx + 0.25 * (1 + dy)) * 50) * (1 - dy * dy);
-      const vein = Math.max(0, veinCenter - 0.5) + Math.max(0, veinSide1 - 0.5) + Math.max(0, veinSide2 - 0.5);
-      // color: dark at veins, base at center of leaf
-      const r = dark.r * vein + base.r * (1 - vein);
-      const g = dark.g * vein + base.g * (1 - vein);
-      const b = dark.b * vein + base.b * (1 - vein);
-      const a = leafMask > 0 ? 255 : 0;
-      const i = (y * S + x) * 4;
-      img.data[i]     = Math.round(r);
-      img.data[i + 1] = Math.round(g);
-      img.data[i + 2] = Math.round(b);
-      img.data[i + 3] = Math.round(a);
-    }
-  }
-  ctx.putImageData(img, 0, 0);
+  ctx.clearRect(0, 0, S, S);
+
+  const cx = S * 0.5, cy = S * 0.5;
+  const baseColor = variant === 0 ? '#386326' : '#568a35';
+  const rimColor = variant === 0 ? '#4d8234' : '#76ad48';
+
+  const grad = ctx.createLinearGradient(cx - S * 0.2, cy, cx + S * 0.2, cy);
+  grad.addColorStop(0, rimColor);
+  grad.addColorStop(0.5, baseColor);
+  grad.addColorStop(1, rimColor);
+  ctx.fillStyle = grad;
+
+  ctx.beginPath();
+  ctx.moveTo(cx, S * 0.08);
+  ctx.bezierCurveTo(cx + S * 0.35, S * 0.25, cx + S * 0.35, S * 0.75, cx, S * 0.92);
+  ctx.bezierCurveTo(cx - S * 0.35, S * 0.75, cx - S * 0.35, S * 0.25, cx, S * 0.08);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = '#85b84c';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx, S * 0.92);
+  ctx.lineTo(cx, S * 0.12);
+  ctx.stroke();
+
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
@@ -95,26 +87,140 @@ function makeLeafTexture(variant = 0) {
 
 const LEAF_TEXTURES = [makeLeafTexture(0), makeLeafTexture(1)];
 
-// shared canopy material per leaf variant (re-used across many trees)
-// Uses MeshLambertMaterial with an onBeforeCompile hook that adds
-// a backlit "subsurface" term: when the sun is behind the leaf (the
-// leaf normal faces away from the sun), the leaf glows with a
-// warm yellow-green tint. This is the cheap fake of SSS — the leaf
-// has a custom chunk in the GLSL that boosts the color when
-// dot(normal, -sunDir) is high.
+function makeFernFrondTexture() {
+  const S = 512;
+  const cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, S, S);
+
+  ctx.strokeStyle = '#426829';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(S * 0.5, S * 0.96);
+  ctx.quadraticCurveTo(S * 0.505, S * 0.5, S * 0.5, S * 0.05);
+  ctx.stroke();
+
+  const pinnaPairs = 20;
+  for (let p = 0; p < pinnaPairs; p++) {
+    const t = p / pinnaPairs;
+    const y = S * (0.10 + t * 0.82);
+    const maxLen = S * 0.44;
+    const len = maxLen * Math.sin(t * Math.PI * 0.85 + 0.15);
+    const angle = 0.45 + (1 - t) * 0.25;
+
+    for (const side of [-1, 1]) {
+      ctx.save();
+      ctx.translate(S * 0.5, y);
+      ctx.scale(side, 1);
+      ctx.rotate(-angle);
+
+      const grad = ctx.createLinearGradient(0, 0, len, 0);
+      grad.addColorStop(0, '#2e5520');
+      grad.addColorStop(0.5, '#4f7d2e');
+      grad.addColorStop(1, '#6ea43a');
+      ctx.fillStyle = grad;
+
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      const lobes = 5;
+      for (let l = 1; l <= lobes; l++) {
+        const lt = l / lobes;
+        const lx = len * lt;
+        const w = (1 - lt) * (len * 0.18);
+        const notch = (l % 2 === 0 ? 0.85 : 1.0);
+        ctx.lineTo(lx, -w * notch);
+      }
+      ctx.lineTo(len, 0);
+      for (let l = lobes; l >= 1; l--) {
+        const lt = l / lobes;
+        const lx = len * lt;
+        const w = (1 - lt) * (len * 0.18);
+        const notch = (l % 2 === 0 ? 0.85 : 1.0);
+        ctx.lineTo(lx, w * notch);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = '#6a9c38';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(len * 0.9, 0);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function makeMonsteraTexture() {
+  const S = 512;
+  const cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, S, S);
+
+  const cx = S * 0.5, cy = S * 0.5;
+  const grad = ctx.createRadialGradient(cx, cy, 30, cx, cy, S * 0.45);
+  grad.addColorStop(0, '#4e822d');
+  grad.addColorStop(0.7, '#356320');
+  grad.addColorStop(1, '#254b17');
+  ctx.fillStyle = grad;
+
+  ctx.beginPath();
+  const nPts = 36;
+  for (let i = 0; i <= nPts; i++) {
+    const a = (i / nPts) * Math.PI * 2;
+    const rBase = S * 0.38 * (1 - 0.25 * Math.sin(a));
+    const wave = Math.sin(a * 7) * (S * 0.025);
+    const r = rBase + wave;
+    const px = cx + Math.cos(a) * r * 0.75;
+    const py = cy + Math.sin(a) * r * 1.1;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = '#7dbb46';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + S * 0.4);
+  ctx.lineTo(cx, cy - S * 0.42);
+  ctx.stroke();
+
+  ctx.strokeStyle = '#629e34';
+  ctx.lineWidth = 2.5;
+  for (let v = -0.3; v <= 0.35; v += 0.08) {
+    const vy = cy + v * S;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(cx, vy);
+      ctx.quadraticCurveTo(cx + side * S * 0.15, vy - S * 0.04, cx + side * S * 0.28, vy - S * 0.08);
+      ctx.stroke();
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
 function makeCanopyMaterial(variant) {
-  const mat = new THREE.MeshLambertMaterial({
+  return new THREE.MeshStandardMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,
-    flatShading: true,    // gives a faceted leaf-cluster look
-    // stronger emissive (cheap fake of SSS) — the canopy always
-    // reads as "backlit green" rather than "dark blob on stick".
-    // This is the dominant effect in the reference images where
-    // leaves glow translucent at their edges.
-    emissive: new THREE.Color(0x1e3314),
-    emissiveIntensity: 0.35,
+    flatShading: false,
+    roughness: 0.72,
+    metalness: 0.02,
+    emissive: new THREE.Color(0x182a10),
+    emissiveIntensity: 0.28,
   });
-  return mat;
 }
 const CANOPY_MATS = [makeCanopyMaterial(0), makeCanopyMaterial(1)];
 
@@ -172,6 +278,58 @@ function leafCardGeometry(width, length) {
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   g.setIndex(new THREE.BufferAttribute(idx, 1));
+  g.computeVertexNormals();
+  return g;
+}
+
+function buildFernFrondGeometry(width, length, droop = 0.2) {
+  const segs = 6;
+  const positions = [], normals = [], uvs = [], indices = [];
+  for (let s = 0; s <= segs; s++) {
+    const t = s / segs;
+    const z = t * length;
+    const y = Math.sin(t * Math.PI * 0.6) * (length * 0.22) - Math.pow(t, 2) * droop;
+    const w = width * (1.0 - t * 0.35);
+    positions.push(-w, y, z,   w, y, z);
+    normals.push(0, 1, 0,  0, 1, 0);
+    uvs.push(0, 1 - t,   1, 1 - t);
+  }
+  for (let s = 0; s < segs; s++) {
+    const i0 = s * 2, i1 = s * 2 + 1;
+    const i2 = (s + 1) * 2, i3 = (s + 1) * 2 + 1;
+    indices.push(i0, i1, i2,  i1, i3, i2);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
+  g.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1));
+  g.computeVertexNormals();
+  return g;
+}
+
+function buildPaddleLeafGeometry(width, length) {
+  const segs = 4;
+  const positions = [], normals = [], uvs = [], indices = [];
+  for (let s = 0; s <= segs; s++) {
+    const t = s / segs;
+    const z = t * length;
+    const y = Math.sin(t * Math.PI * 0.7) * (length * 0.16) - Math.pow(t, 2) * 0.12;
+    const w = width * Math.sin(t * Math.PI * 0.85 + 0.15);
+    positions.push(-w, y, z,   w, y, z);
+    normals.push(0, 1, 0,  0, 1, 0);
+    uvs.push(0, 1 - t,   1, 1 - t);
+  }
+  for (let s = 0; s < segs; s++) {
+    const i0 = s * 2, i1 = s * 2 + 1;
+    const i2 = (s + 1) * 2, i3 = (s + 1) * 2 + 1;
+    indices.push(i0, i1, i2,  i1, i3, i2);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
+  g.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1));
   g.computeVertexNormals();
   return g;
 }
@@ -633,7 +791,7 @@ function buildPalmTree(rng) {
     cc[i + 2] = 0.7 + rng() * 0.2;
   }
   crownGeo.setAttribute('color', new THREE.BufferAttribute(cc, 3));
-  return { trunk: trunkFull, crown: crownGeo, variant: 0, height: h, baseR: r0, isPalm: true };
+  return { trunk: trunkFull, crown: crownGeo, variant: 0, height: h, baseR: r0, isPalm: true, isCard: true };
 }
 
 // ---------- branch with leaf cluster at tip ----------
@@ -737,7 +895,7 @@ function buildBroadleafTree(rng) {
   // look bare when seen from above
   const upperCrownR = 1.2 + rng() * 0.6;
   const upperCrown = buildLeafCardCluster(rng, 0, h * 0.85, 0, upperCrownR * 1.4, 60, variant);
-  return { trunk: trunkFull, crown: upperCrown, variant, height: h, baseR: r0 };
+  return { trunk: trunkFull, crown: upperCrown, variant, height: h, baseR: r0, isCard: true };
 }
 
 function buildThinHardwood(rng) {
@@ -861,7 +1019,7 @@ function buildFernTree(rng) {
     cc[i + 2] = 0.6 + rng() * 0.2;
   }
   crownGeo.setAttribute('color', new THREE.BufferAttribute(cc, 3));
-  return { trunk, crown: crownGeo, variant: 1, height: h, baseR: r0 };
+  return { trunk, crown: crownGeo, variant: 1, height: h, baseR: r0, isCard: true };
 }
 
 // A low (1.5-3.5m) bushy multi-stem "tree" — fills the eye-level
@@ -1102,37 +1260,22 @@ function pickSpecies(rng) {
 
 // ---------- FERN (understory): fronds that curve outward and upward ----------
 function buildFern(rng) {
-  const fronds = 6 + Math.floor(rng() * 5);
+  const fronds = 7 + Math.floor(rng() * 6);
   const geos = [];
   for (let i = 0; i < fronds; i++) {
     const a = (i / fronds) * Math.PI * 2 + rng() * 0.4;
-    const len = 0.7 + rng() * 0.8;
-    const segs = 7;
-    for (let s = 0; s < segs; s++) {
-      const ts = s / segs;
-      const w = 0.10 + rng() * 0.05;
-      const card = leafCardGeometry(w, len * (1 - ts * 0.25));
-      // Place fronds at an upward-outward angle (45-65° from horizontal)
-      // so they read as upright ferns from eye level, not flat ground
-      // cover. droop and angle change along the frond.
-      const droopY = -Math.pow(ts, 1.0) * 0.15;
-      const reach = ts * len;
-      card.translate(0, droopY, reach);
-      // start at ~50° up, gradually flatten to ~10° up
-      const startAngle = -Math.PI * 0.35;
-      const endAngle   = -Math.PI * 0.05;
-      const ang = startAngle + (endAngle - startAngle) * ts;
-      card.rotateX(ang);
-      card.rotateY(a);
-      geos.push(card);
-    }
+    const len = 0.9 + rng() * 0.8;
+    const w = 0.22 + rng() * 0.10;
+    const frond = buildFernFrondGeometry(w, len, 0.18 + rng() * 0.18);
+    frond.rotateY(a);
+    geos.push(frond);
   }
   const m = mergeLite(geos);
   const cc = new Float32Array(m.attributes.position.count * 3);
   for (let i = 0; i < cc.length; i += 3) {
-    cc[i] = 0.55 + rng() * 0.4;
-    cc[i + 1] = 0.9 + rng() * 0.3;
-    cc[i + 2] = 0.5 + rng() * 0.2;
+    cc[i] = 0.85 + rng() * 0.3;
+    cc[i + 1] = 0.95 + rng() * 0.2;
+    cc[i + 2] = 0.80 + rng() * 0.2;
   }
   m.setAttribute('color', new THREE.BufferAttribute(cc, 3));
   return m;
@@ -1144,22 +1287,18 @@ function buildBroadleafHerb(rng) {
   const geos = [];
   for (let i = 0; i < leaves; i++) {
     const a = (i / leaves) * Math.PI * 2 + rng() * 0.3;
-    const len = 0.5 + rng() * 0.4;
-    const w = 0.2 + rng() * 0.1;
-    const card = leafCardGeometry(w, len);
-    // broad leaves angled up (30-60° from horizontal) so they're
-    // visible from eye level, not flat on the ground.
-    card.translate(0, 0, len * 0.5);
-    card.rotateX(-Math.PI * 0.3 + (rng() - 0.5) * 0.25);
+    const len = 0.6 + rng() * 0.5;
+    const w = 0.28 + rng() * 0.14;
+    const card = buildPaddleLeafGeometry(w, len);
     card.rotateY(a);
     geos.push(card);
   }
   const m = mergeLite(geos);
   const cc = new Float32Array(m.attributes.position.count * 3);
   for (let i = 0; i < cc.length; i += 3) {
-    cc[i] = 0.6 + rng() * 0.4;
-    cc[i + 1] = 0.85 + rng() * 0.3;
-    cc[i + 2] = 0.5 + rng() * 0.2;
+    cc[i] = 0.85 + rng() * 0.3;
+    cc[i + 1] = 0.95 + rng() * 0.2;
+    cc[i + 2] = 0.80 + rng() * 0.2;
   }
   m.setAttribute('color', new THREE.BufferAttribute(cc, 3));
   return m;
@@ -1282,8 +1421,8 @@ function buildMossPatch(rng, radius) {
 // enforcing a minimum distance between trees.
 function scatterTrees(scene, opts) {
   const {
-    minRadius = 4,      // min distance to trail centerline
-    treeSpacing = 3.2,   // min distance between trees
+    minRadius = 2.4,    // min distance to trail centerline
+    treeSpacing = 1.3,   // min distance between trees
     density = 1.0,       // global multiplier
     maxCount = 800,
   } = opts;
@@ -1344,55 +1483,30 @@ function scatterTrees(scene, opts) {
     // crown
     let crownMesh = null;
     if (tree.crown && tree.crown.attributes.position.count > 0) {
-      // use the leaf-card material for the crown (with the leaf-texture
-      // map and alpha cutout), not the icosahedron-blob Lambert material.
-      // CANOPY_MATS is kept for non-broadleaf species that still use
-      // buildCanopyCluster; for broadleaf the new buildLeafCardCluster
-      // produces geometry that needs the leaf-card material to render
-      // with a visible texture.
-      const cm = LEAF_CARD_MATS[tree.variant].clone();
-      // material.clone() does NOT always preserve alphaTest, so set it
-      // explicitly to ensure the leaf-shaped alpha mask cuts out the
-      // card outside the leaf silhouette. Also disable depthWrite so
-      // the cards don't z-fight with each other.
-      cm.alphaTest = 0.4;
-      cm.depthWrite = false;
-      cm.polygonOffset = true;
-      cm.polygonOffsetFactor = -1;
-      cm.polygonOffsetUnits = -1;
-      // small per-instance color variation (this multiplies the texture)
-      cm.color = new THREE.Color().setHSL(
-        0.27 + (localRng() - 0.5) * 0.05,
-        0.45 + localRng() * 0.2,
-        0.5 + (localRng() - 0.5) * 0.12,
-      );
-      cm.needsUpdate = true;
-      crownMesh = new THREE.Mesh(tree.crown, cm);
-      crownMesh.castShadow = false;
-      // leaf cards use alphaTest, so depth handling needs care
-      crownMesh.receiveShadow = false;
-      // canopies are dense meshes that would self-shadow heavily with
-      // the current shadow setup, making them look like dark blobs.
-      // Disable receiveShadow so the lit side stays bright even where
-      // the canopy's own top would cast on its own sides.
-      crownMesh.receiveShadow = false;
-      group.add(crownMesh);
-      // leaf-quilt overlay: many small flat-shaded triangles poking
-      // out of the canopy surface. Breaks the icosahedron silhouette
-      // and adds a real "leaf bunches" reading at any distance.
-      if (tree.height > 0.5) {
-        crownMesh.geometry.computeBoundingSphere();
-        const bs = crownMesh.geometry.boundingSphere;
-        const quiltR = Math.min(bs.radius * 1.15, 4.0);
-        // match the canopy material's hue so the quilt blends in
-        const hueShift = cm.color.r;
-        const quilt = buildLeafQuilt(localRng, bs.center.x, bs.center.y, bs.center.z,
-                                     quiltR, 60, hueShift);
-        const quiltMesh = new THREE.Mesh(quilt, cm);
-        quiltMesh.castShadow = false;
-        quiltMesh.receiveShadow = false;
-        group.add(quiltMesh);
+      if (tree.isCard) {
+        const cm = LEAF_CARD_MATS[tree.variant].clone();
+        cm.alphaTest = 0.32;
+        cm.depthWrite = true;
+        cm.roughness = 0.65;
+        cm.color = new THREE.Color().setHSL(
+          0.28 + (localRng() - 0.5) * 0.04,
+          0.50 + localRng() * 0.16,
+          0.48 + (localRng() - 0.5) * 0.10,
+        );
+        crownMesh = new THREE.Mesh(tree.crown, cm);
+      } else {
+        const cm = CANOPY_MATS[tree.variant].clone();
+        cm.roughness = 0.72;
+        cm.color = new THREE.Color().setHSL(
+          0.28 + (localRng() - 0.5) * 0.03,
+          0.48 + localRng() * 0.14,
+          0.50 + (localRng() - 0.5) * 0.08,
+        );
+        crownMesh = new THREE.Mesh(tree.crown, cm);
       }
+      crownMesh.castShadow = true;
+      crownMesh.receiveShadow = true;
+      group.add(crownMesh);
     }
     // a small random rotation around Y so silhouettes never repeat
     group.rotation.y = localRng() * Math.PI * 2;
@@ -1417,20 +1531,33 @@ function scatterUnderstory(scene, opts) {
   const { fernCount = 600, herbCount = 400, logCount = 90, mossCount = 240, vineCount = 80 } = opts;
   const rng = mulberry32(0xA1B2_C3D4);
 
+  const FERN_TEX = makeFernFrondTexture();
+  const MONSTERA_TEX = makeMonsteraTexture();
+
   // pool geometries
   const fernGeos = [];
   for (let i = 0; i < 8; i++) fernGeos.push(buildFern(mulberry32(2000 + i)));
-  const fernMat = new THREE.MeshLambertMaterial({
-    map: LEAF_TEXTURES[1], transparent: true, alphaTest: 0.4,
-    side: THREE.DoubleSide, vertexColors: true, color: 0x6ea83e,
+  const fernMat = new THREE.MeshStandardMaterial({
+    map: FERN_TEX,
+    transparent: false,
+    alphaTest: 0.30,
+    side: THREE.DoubleSide,
+    vertexColors: true,
+    roughness: 0.65,
+    metalness: 0.02,
     depthWrite: true,
   });
 
   const herbGeos = [];
   for (let i = 0; i < 6; i++) herbGeos.push(buildBroadleafHerb(mulberry32(3000 + i)));
-  const herbMat = new THREE.MeshLambertMaterial({
-    map: LEAF_TEXTURES[0], transparent: true, alphaTest: 0.4,
-    side: THREE.DoubleSide, vertexColors: true, color: 0x4e8a2a,
+  const herbMat = new THREE.MeshStandardMaterial({
+    map: MONSTERA_TEX,
+    transparent: false,
+    alphaTest: 0.30,
+    side: THREE.DoubleSide,
+    vertexColors: true,
+    roughness: 0.60,
+    metalness: 0.02,
     depthWrite: true,
   });
 
@@ -1460,7 +1587,7 @@ function scatterUnderstory(scene, opts) {
     const x = (rng() - 0.5) * WORLD.size * 0.95;
     const z = (rng() - 0.5) * WORLD.size * 0.95;
     const { dist } = distToTrail(x, z);
-    if (dist < 0.8) continue;                       // right at trail edge
+    if (dist < 0.5) continue;                       // right at trail edge
     if (rng() > Math.exp(-dist * 0.012)) continue;  // more permissive falloff
     const slope = Math.abs(terrainHeight(x + 1, z) - terrainHeight(x - 1, z))
                 + Math.abs(terrainHeight(x, z + 1) - terrainHeight(x, z - 1));
@@ -1489,7 +1616,7 @@ function scatterUnderstory(scene, opts) {
     const x = (rng() - 0.5) * WORLD.size * 0.95;
     const z = (rng() - 0.5) * WORLD.size * 0.95;
     const { dist } = distToTrail(x, z);
-    if (dist < 2.0) continue;
+    if (dist < 1.2) continue;
     if (rng() > Math.exp(-dist * 0.025)) continue;
     const y = terrainHeight(x, z);
     if (y < -0.2) continue;

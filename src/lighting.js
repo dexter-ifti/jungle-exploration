@@ -33,7 +33,7 @@ function makeGodRayTexture() {
     if (vy < 0.1) v = vy / 0.1;
     else if (vy < 0.7) v = 1.0;
     else v = (1 - vy) / 0.3;
-    v = Math.max(0, Math.min(1, v)) * 0.55;   // overall softness
+    v = Math.max(0, Math.min(1, v)) * 0.60;   // overall softness
     for (let x = 0; x < W; x++) {
       const vx = x / W;
       // soft horizontal falloff
@@ -42,8 +42,8 @@ function makeGodRayTexture() {
       const a = v * h * h * 255;
       const i = (y * W + x) * 4;
       img.data[i]     = 255;
-      img.data[i + 1] = 244;
-      img.data[i + 2] = 220;
+      img.data[i + 1] = 242;
+      img.data[i + 2] = 215;
       img.data[i + 3] = a;
     }
   }
@@ -55,17 +55,9 @@ function makeGodRayTexture() {
 const GODRAY_TEX = makeGodRayTexture();
 
 // ---------- god-ray billboard shader material ----------
-// Long thin quad with a vertex-shader "view dot sun" factor: the
-// ray fades out when the camera looks away from the sun and brightens
-// when looking toward it. Combined with a soft horizontal falloff in
-// the fragment shader, this reads as a volumetric light shaft
-// cutting through the air.
 function makeGodRayMaterial() {
-  // minimal: just MeshBasicMaterial with map, but with transparent
-  // and additive blend. Avoids the ShaderMaterial uniform-binding
-  // error in the current Three.js + SwiftShader combination.
   return new THREE.MeshBasicMaterial({
-    color: 0xfff0c4,
+    color: 0xffefc8,
     map: GODRAY_TEX,
     transparent: true,
     opacity: 0.55,
@@ -77,8 +69,6 @@ function makeGodRayMaterial() {
 }
 
 // ---------- god-ray scene object ----------
-// Holds all the light-shafts and a particle system. Replaces the
-// placeholder lights in world.js.
 export class JungleLighting {
   constructor(scene) {
     this.scene = scene;
@@ -103,11 +93,6 @@ export class JungleLighting {
     this.sky = sky;
 
     // ----- sun (directional) -----
-    // Sun positioned forward-left-above so the camera (facing -z down
-    // the trail) sees the sun disk ahead of it. The radial god-rays
-    // pass needs the sun to be in front of the camera for the rays
-    // to read as light shafts. The sun casts warm light onto the
-    // forward-facing sides of the canopies.
     const sun = new THREE.DirectionalLight(0xffecc0, 3.6);
     sun.position.set(40, 140, -180);  // forward and right
     sun.target.position.set(-10, 0, -240);
@@ -126,12 +111,7 @@ export class JungleLighting {
     this.group.add(sun);
     this.group.add(sun.target);
 
-    // ----- sun disk (small bright sphere at the sun's position) -----
-    // The sky gradient alone doesn't give the radial god-rays pass
-    // anything bright to "shine through". Add a small intense white
-    // sphere at the sun's position so the screen-space rays have a
-    // real source. frustumCulled = false because the sphere is at
-    // ~300m and the bounding sphere is small relative to the camera.
+    // ----- sun disk -----
     const sunDisk = new THREE.Mesh(
       new THREE.SphereGeometry(22, 16, 12),
       new THREE.MeshBasicMaterial({ color: 0xfff8e0, fog: false }),
@@ -139,27 +119,12 @@ export class JungleLighting {
     sunDisk.position.copy(sun.position).multiplyScalar(1.6);
     sunDisk.frustumCulled = false;
     this.group.add(sunDisk);
-    this.sunDisk = sunDisk;
 
-    // ----- hemisphere (cool sky + warm ground bounce) -----
-    const hemi = new THREE.HemisphereLight(0x6e8862, 0x3d3222, 1.4);
-    this.hemi = hemi;
+    // ----- ambient hemisphere light -----
+    const hemi = new THREE.HemisphereLight(0x759a58, 0x242218, 1.4);
     this.group.add(hemi);
 
-    // ----- canopy green fill -----
-    const canopyFill = new THREE.DirectionalLight(0x406028, 0.7);
-    canopyFill.position.set(-30, 60, -20);
-    this.canopyFill = canopyFill;
-    this.group.add(canopyFill);
-
-    // ----- secondary warm fill from the front-right (side bounce) -----
-    const sideFill = new THREE.DirectionalLight(0xffe090, 0.5);
-    sideFill.position.set(60, 50, 40);
-    this.group.add(sideFill);
-
     // ----- under-canopy ambient point lights along the trail -----
-    // Very dim point lights that follow the trail, creating the dappled
-    // "light pools" effect under canopy gaps.
     this.dapples = [];
     for (let i = 0; i < 14; i++) {
       const t = (i + 0.5) / 14;
@@ -186,56 +151,43 @@ export class JungleLighting {
   }
 
   _buildGodRays() {
-    // Place god ray billboards in a cluster between the camera's
-    // typical view direction and the sun. The previous version spread
-    // rays along the entire trail which meant most were off-axis and
-    // invisible. These rays are positioned in a region forward of the
-    // trail start so they're always in the player's line of sight.
-    // Each ray is a long thin quad oriented so its "down" axis is
-    // the sun's downward direction. The quad's material uses a
-    // vertex-shader based "view dot sun" factor so rays fade when
-    // the camera looks away from the sun, and a soft horizontal
-    // falloff so they read as volumetric light shafts.
     const sunDir = new THREE.Vector3().subVectors(this.sun.target.position, this.sun.position).normalize();
-    const sunDown = sunDir.clone().multiplyScalar(-1);  // direction rays "fall"
+    const sunDown = sunDir.clone().multiplyScalar(-1);
     const rays = [];
-    const N_RAYS = 24;
-    // cluster rays in a region in front of the camera's typical trail
-    // position (around t=0.3) and in the sun's general area
-    const clusterCenter = TRAIL.getPoint(0.3);
-    for (let i = 0; i < N_RAYS; i++) {
-      // random position in a 50x30x80 box around the cluster, biased
-      // toward the sun direction
-      const offX = (N.noise2(i * 0.41, 3) - 0.5) * 50;
-      const offY = 4 + N.noise2(i * 0.31, 7) * 10;
-      const offZ = (N.noise2(i * 0.27, 11) - 0.5) * 80;
-      const w = 1.5 + N.noise2(i * 0.19, 13) * 2.5;
-      const h = 14 + N.noise2(i * 0.13, 17) * 8;
-      const geo = new THREE.PlaneGeometry(w, h, 1, 1);
-      const mat = makeGodRayMaterial();
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(clusterCenter.x + offX, offY, clusterCenter.z + offZ);
-      // orient so the ray's "up" axis is the sun's downward direction
-      const yAxis = new THREE.Vector3(0, 1, 0);
-      const q = new THREE.Quaternion().setFromUnitVectors(yAxis, sunDown);
-      m.quaternion.copy(q);
-      m.userData.basePos = m.position.clone();
-      m.userData.phase = N.noise2(i * 0.51, 19) * Math.PI * 2;
-      rays.push(m);
+    // Focal points: trailhead (0.01 - 0.08), mid-trail dense jungle (0.28 - 0.35), ruins clearing (0.47 - 0.51)
+    const focalStops = [0.02, 0.08, 0.28, 0.35, 0.47, 0.49, 0.51];
+    let rayIdx = 0;
+    for (let f = 0; f < focalStops.length; f++) {
+      const stopT = focalStops[f];
+      const p = TRAIL.getPoint(stopT);
+      const count = (stopT >= 0.46) ? 7 : 4;
+      for (let i = 0; i < count; i++) {
+        const offX = (N.noise2(rayIdx * 0.41, 3) - 0.5) * 16;
+        const offY = 6 + N.noise2(rayIdx * 0.31, 7) * 8;
+        const offZ = (N.noise2(rayIdx * 0.27, 11) - 0.5) * 16;
+        const w = 2.0 + N.noise2(rayIdx * 0.19, 13) * 2.2;
+        const h = 18 + N.noise2(rayIdx * 0.13, 17) * 10;
+        const geo = new THREE.PlaneGeometry(w, h, 1, 1);
+        const mat = makeGodRayMaterial();
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(p.x + offX, terrainHeight(p.x + offX, p.z + offZ) + offY, p.z + offZ);
+        const yAxis = new THREE.Vector3(0, 1, 0);
+        const q = new THREE.Quaternion().setFromUnitVectors(yAxis, sunDown);
+        m.quaternion.copy(q);
+        m.userData.basePos = m.position.clone();
+        m.userData.phase = N.noise2(rayIdx * 0.51, 19) * Math.PI * 2;
+        rays.push(m);
+        rayIdx++;
+      }
     }
     return rays;
   }
 
   _buildParticles() {
-    // 900 small bright motes scattered around the canopy area, each
-    // with a slight drift. They twinkle on/off over time. Larger and
-    // brighter than the previous 400/0.12/0.55 setup so the
-    // screen-space god rays have something to scatter through.
     const N_PARTICLES = 900;
     const positions = new Float32Array(N_PARTICLES * 3);
     const seeds = new Float32Array(N_PARTICLES);
     for (let i = 0; i < N_PARTICLES; i++) {
-      // scatter within the world but biased toward the trail
       const t = Math.max(0.01, Math.min(0.99, N.noise2(i * 0.13, 1) * 0.45 + 0.5));
       const p = TRAIL.getPoint(t);
       const offX = (N.noise2(i * 0.31, 7) - 0.5) * 30;
@@ -249,8 +201,6 @@ export class JungleLighting {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geo.setAttribute('seed', new THREE.BufferAttribute(seeds, 1));
-    // tiny billboard material — larger and brighter so the motes
-    // catch the god rays and read as airborne dust catching sunlight
     const mat = new THREE.PointsMaterial({
       color: 0xfff0c8,
       size: 0.22,

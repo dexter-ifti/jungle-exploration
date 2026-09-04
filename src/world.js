@@ -154,36 +154,36 @@ export function baseHeight(x, z) {
 
 // cliff wall behind the falls
 export function cliffHeight(x, z) {
-const front = WORLD.waterfallZ;
-if (z > front + 2) return null;
-// amphitheater-shaped cliff wrapping the clearing
-const cx = 0;
-const spread = Math.max(0, 1 - Math.abs(x - cx) / 130);
-if (spread <= 0) return null;
-// irregular crest: multiple noise octaves so the skyline is jagged, not smooth
-const topY = 40 +
-  N.fbm(x * 0.02, 0.5, 3) * 14 +
-  N.fbm(x * 0.075, 4.2, 4) * 6 +
-  N.fbm(x * 0.22, 8.8, 3) * 1.8;
-const depth = front - z; // how far "into" the wall
-const wallHalf = 16 + N.fbm(x * 0.05, 9.1, 3) * 7;
-if (depth < -wallHalf || depth > wallHalf * 2.4) {
-  if (z < front - wallHalf) {
-    const t = THREE.MathUtils.clamp((front - wallHalf - z) / 30, 0, 1);
-    return topY * THREE.MathUtils.smoothstep(t, 0, 1) * spread;
+  const front = WORLD.waterfallZ;
+  if (z > front + 2) return null;
+  // amphitheater-shaped cliff wrapping the clearing
+  const cx = 0;
+  const spread = Math.max(0, 1 - Math.abs(x - cx) / 130);
+  if (spread <= 0) return null;
+  // irregular crest: multiple noise octaves so the skyline is jagged, not smooth
+  const topY = 40 +
+    N.fbm(x * 0.02, 0.5, 3) * 14 +
+    N.fbm(x * 0.075, 4.2, 4) * 6 +
+    N.fbm(x * 0.22, 8.8, 3) * 1.8;
+  const depth = front - z; // how far "into" the wall
+  const wallHalf = 16 + N.fbm(x * 0.05, 9.1, 3) * 7;
+  if (depth < -wallHalf || depth > wallHalf * 2.4) {
+    if (z < front - wallHalf) {
+      const t = THREE.MathUtils.clamp((front - wallHalf - z) / 30, 0, 1);
+      return topY * THREE.MathUtils.smoothstep(t, 0, 1) * spread;
+    }
+    return null;
   }
-  return null;
-}
-const t = THREE.MathUtils.clamp(depth / wallHalf, 0, 1.6);
-const yTop = topY * spread;
-const prof = Math.pow(Math.sin(Math.min(t, 1) * Math.PI * 0.5), 0.65);
-// buttresses and gullies: ridged noise across x modulates the face in/out
-const buttress = Math.sin(x * 0.14 + N.fbm(x * 0.03, 2.2, 3) * 4) * 3.2
-               + N.fbm(x * 0.09, z * 0.05, 4) * 4.5;
-const rough = N.fbm(x * 0.11, z * 0.11, 4) * 2.6 + N.fbm(x * 0.4, z * 0.4, 2) * 0.7;
-const base = yTop * prof + buttress * spread * (1 - t * 0.5) + rough * spread
-           + (depth > 1 ? yTop * (depth - 1) * 0.35 : 0);
-return base;
+  const t = THREE.MathUtils.clamp(depth / wallHalf, 0, 1.6);
+  const yTop = topY * spread;
+  const prof = Math.pow(Math.sin(Math.min(t, 1) * Math.PI * 0.5), 0.65);
+  // buttresses and gullies: ridged noise across x modulates the face in/out
+  const buttress = Math.sin(x * 0.14 + N.fbm(x * 0.03, 2.2, 3) * 4) * 3.2
+                 + N.fbm(x * 0.09, z * 0.05, 4) * 4.5;
+  const rough = N.fbm(x * 0.11, z * 0.11, 4) * 2.6 + N.fbm(x * 0.4, z * 0.4, 2) * 0.7;
+  const base = yTop * prof + buttress * spread * (1 - t * 0.5) + rough * spread
+             + (depth > 1 ? yTop * (depth - 1) * 0.35 : 0);
+  return base;
 }
 
 export function terrainHeight(x, z) {
@@ -198,33 +198,46 @@ function makeGroundTexture() {
   const cv = document.createElement('canvas'); cv.width = cv.height = S;
   const ctx = cv.getContext('2d');
   const img = ctx.createImageData(S, S);
-  // world-space -> uv mapping is done in shader-free way: we bake a tileable detail texture
-  // and blend macro variation per-vertex via vertex colors.
-  const soil = [72, 54, 38], soilDark = [48, 36, 26], litter = [96, 74, 44],
-        mossC = [70, 88, 44], clay = [92, 68, 46];
+  const soil = [68, 50, 34], soilDark = [44, 32, 22], litter = [92, 70, 42],
+        mossC = [66, 84, 40], clay = [88, 64, 42];
   for (let y = 0; y < S; y++) {
     for (let x = 0; x < S; x++) {
       const u = x / S, v = y / S;
-      // seamless fbm by sampling on a torus (4D trick approximated with blends)
       const n1 = N.fbm(u * 24, v * 24, 4);
       const n2 = N.fbm((u - 1) * 24, v * 24, 4);
       const n3 = N.fbm(u * 24, (v - 1) * 24, 4);
       const n4 = N.fbm((u - 1) * 24, (v - 1) * 24, 4);
-      const nx = N.fbm((u + 1) * 24, (v + 1) * 24, 4);
       const bx = THREE.MathUtils.smoothstep(u, 0.75, 1);
       const by = THREE.MathUtils.smoothstep(v, 0.75, 1);
       const n = THREE.MathUtils.lerp(
         THREE.MathUtils.lerp(n1, n2, bx),
         THREE.MathUtils.lerp(n3, n4, by), by ? Math.max(by, 0) : by);
-      void nx;
       const grain = N.noise2(x * 0.9, y * 0.9) * 0.5;
       let r, g, b;
-      if (n < -0.15) { const t = (n + 0.15) / 0.35; r = THREE.MathUtils.lerp(soil[0], soilDark[0], -t); g = THREE.MathUtils.lerp(soil[1], soilDark[1], -t); b = THREE.MathUtils.lerp(soil[2], soilDark[2], -t); }
-      else if (n < 0.1) { const t = (n + 0.15) / 0.25; r = THREE.MathUtils.lerp(soil[0], clay[0], t); g = THREE.MathUtils.lerp(soil[1], clay[1], t); b = THREE.MathUtils.lerp(soil[2], clay[2], t); }
-      else { const t = Math.min((n - 0.1) / 0.25, 1); r = THREE.MathUtils.lerp(clay[0], litter[0], t); g = THREE.MathUtils.lerp(clay[1], litter[1], t); b = THREE.MathUtils.lerp(clay[2], litter[2], t); }
+      if (n < -0.15) {
+        const t = (n + 0.15) / 0.35;
+        r = THREE.MathUtils.lerp(soil[0], soilDark[0], -t);
+        g = THREE.MathUtils.lerp(soil[1], soilDark[1], -t);
+        b = THREE.MathUtils.lerp(soil[2], soilDark[2], -t);
+      } else if (n < 0.1) {
+        const t = (n + 0.15) / 0.25;
+        r = THREE.MathUtils.lerp(soil[0], clay[0], t);
+        g = THREE.MathUtils.lerp(soil[1], clay[1], t);
+        b = THREE.MathUtils.lerp(soil[2], clay[2], t);
+      } else {
+        const t = Math.min((n - 0.1) / 0.25, 1);
+        r = THREE.MathUtils.lerp(clay[0], litter[0], t);
+        g = THREE.MathUtils.lerp(clay[1], litter[1], t);
+        b = THREE.MathUtils.lerp(clay[2], litter[2], t);
+      }
       // sparse moss speckle
       const m = N.fbm(u * 60, v * 60, 2);
-      if (m > 0.32) { const k = Math.min((m - 0.32) * 4, 1) * 0.6; r = THREE.MathUtils.lerp(r, mossC[0], k); g = THREE.MathUtils.lerp(g, mossC[1], k); b = THREE.MathUtils.lerp(b, mossC[2], k); }
+      if (m > 0.32) {
+        const k = Math.min((m - 0.32) * 4, 1) * 0.6;
+        r = THREE.MathUtils.lerp(r, mossC[0], k);
+        g = THREE.MathUtils.lerp(g, mossC[1], k);
+        b = THREE.MathUtils.lerp(b, mossC[2], k);
+      }
       const d = 1 + grain * 0.28;
       const i = (y * S + x) * 4;
       img.data[i] = r * d; img.data[i + 1] = g * d; img.data[i + 2] = b * d; img.data[i + 3] = 255;
@@ -234,6 +247,48 @@ function makeGroundTexture() {
   const tex = new THREE.CanvasTexture(cv);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+// Procedural ground normal map for dirt relief, pebbles, and root fibers
+function makeGroundNormalTexture() {
+  const S = 512;
+  const cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(S, S);
+  const hMap = new Float32Array(S * S);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const u = x / S, v = y / S;
+      const n1 = N.fbm(u * 28, v * 28, 4) * 0.45;
+      const n2 = N.fbm(u * 72, v * 72, 3) * 0.25;
+      const pebbles = Math.pow(Math.max(0, N.noise2(x * 1.4, y * 1.4)), 3) * 0.35;
+      hMap[y * S + x] = n1 + n2 + pebbles;
+    }
+  }
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const xL = (x - 1 + S) % S, xR = (x + 1) % S;
+      const yT = (y - 1 + S) % S, yB = (y + 1) % S;
+      const dx = (hMap[y * S + xR] - hMap[y * S + xL]) * 2.8;
+      const dy = (hMap[yB * S + x] - hMap[yT * S + x]) * 2.8;
+      const dz = 1.0;
+      const len = Math.hypot(dx, dy, dz);
+      const nx = -dx / len;
+      const ny = -dy / len;
+      const nz = dz / len;
+      const i = (y * S + x) * 4;
+      img.data[i] = Math.round((nx * 0.5 + 0.5) * 255);
+      img.data[i + 1] = Math.round((ny * 0.5 + 0.5) * 255);
+      img.data[i + 2] = Math.round((nz * 0.5 + 0.5) * 255);
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.NoColorSpace;
   tex.anisotropy = 8;
   return tex;
 }
@@ -313,7 +368,6 @@ function scatterRocks(scene, count) {
       .setPosition(x, y - s * 0.22, z); // slightly sunk
     geos.push({ g, m });
   }
-  // merge into one mesh per ~120 rocks using BufferGeometryUtils-lite (manual merge)
   const merged = mergeGeometries(geos.map(({ g, m }) => {
     const gg = g.clone().applyMatrix4(m);
     return gg;
@@ -323,22 +377,81 @@ function scatterRocks(scene, count) {
   scene.add(mesh);
 }
 
+// ---------- surface roots along trail ----------
+function makeRootGeometry(rng, length, radius) {
+  const segs = 14;
+  const radial = 7;
+  const pts = [];
+  const baseAngle = rng() * Math.PI * 2;
+  for (let s = 0; s <= segs; s++) {
+    const t = s / segs;
+    const x = t * length;
+    const curve = Math.sin(t * Math.PI * 1.4 + baseAngle) * (length * 0.2);
+    const yWave = Math.sin(t * Math.PI * 2) * 0.05;
+    pts.push(new THREE.Vector3(x, yWave, curve));
+  }
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const geo = new THREE.TubeGeometry(curve, 14, radius, radial, false);
+  geo.scale(1.0, 0.45, 1.0); // flatten vertically into ground
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function scatterTrailRoots(scene, count = 50) {
+  const rng = (() => { let s = 9991; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; })();
+  const rootMat = new THREE.MeshStandardMaterial({
+    color: 0x3d2f21,
+    roughness: 0.92,
+    metalness: 0.02,
+  });
+  const geos = [];
+  for (let i = 0; i < count; i++) {
+    const t = 0.02 + rng() * 0.94;
+    const p = TRAIL.getPoint(t);
+    const tangent = TRAIL.getTangent(t);
+    const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+    const side = rng() < 0.5 ? -1 : 1;
+    const off = (1.2 + rng() * 2.2) * side;
+    const startX = p.x + normal.x * off;
+    const startZ = p.z + normal.z * off;
+    const rootLen = 2.0 + rng() * 2.5;
+    const rootR = 0.09 + rng() * 0.11;
+    const g = makeRootGeometry(rng, rootLen, rootR);
+    const rotY = Math.atan2(-normal.z * side, -normal.x * side) + (rng() - 0.5) * 0.8;
+    const m = new THREE.Matrix4()
+      .makeRotationY(rotY)
+      .setPosition(startX, terrainHeight(startX, startZ) + 0.03, startZ);
+    geos.push({ g, m });
+  }
+  if (geos.length > 0) {
+    const merged = mergeGeometries(geos.map(({ g, m }) => g.clone().applyMatrix4(m)));
+    const mesh = new THREE.Mesh(merged, rootMat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+  }
+}
+
 // minimal geometry merger (positions/normals/uv, non-indexed)
 function mergeGeometries(geos) {
+  const nonIndexed = geos.map(g => {
+    g.deleteAttribute('uv');
+    return g.index ? g.toNonIndexed() : g;
+  });
   let vCount = 0;
-  for (const g of geos) { g.deleteAttribute('uv'); vCount += g.attributes.position.count; }
+  for (const g of nonIndexed) vCount += g.attributes.position.count;
   const pos = new Float32Array(vCount * 3);
   const nor = new Float32Array(vCount * 3);
   let o = 0;
-  for (const g of geos) {
-    const gg = g.index ? g.toNonIndexed() : g;
-    pos.set(gg.attributes.position.array, o);
-    nor.set(gg.attributes.normal.array, o);
-    o += gg.attributes.position.array.length;
+  for (const g of nonIndexed) {
+    pos.set(g.attributes.position.array, o);
+    if (g.attributes.normal) nor.set(g.attributes.normal.array, o);
+    o += g.attributes.position.array.length;
   }
   const out = new THREE.BufferGeometry();
   out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  out.computeVertexNormals();
   return out;
 }
 
@@ -374,6 +487,9 @@ export async function buildScene() {
   // ground texture repeats in world space
   const groundTex = makeGroundTexture();
   groundTex.repeat.set(size / 9, size / 9);
+
+  const groundNorm = makeGroundNormalTexture();
+  groundNorm.repeat.set(size / 9, size / 9);
 
   const cTrail = new THREE.Color(0x9c8262);       // worn earth
   const cLitter = new THREE.Color(0x5d4a2f);      // leaf-litter soil
@@ -426,7 +542,12 @@ export async function buildScene() {
   geo.computeVertexNormals();
 
   const groundMat = new THREE.MeshStandardMaterial({
-    map: groundTex, vertexColors: true, roughness: 0.94, metalness: 0.0,
+    map: groundTex,
+    normalMap: groundNorm,
+    normalScale: new THREE.Vector2(0.85, 0.85),
+    vertexColors: true,
+    roughness: 0.92,
+    metalness: 0.02,
   });
   const ground = new THREE.Mesh(geo, groundMat);
   ground.receiveShadow = true; ground.castShadow = false;
@@ -473,6 +594,9 @@ export async function buildScene() {
 
   // ----- scattered terrain rocks -----
   scatterRocks(scene, 260);
+
+  // ----- surface roots winding across trail -----
+  scatterTrailRoots(scene, 50);
 
   // ----- System 2: vegetation (trees, ferns, herbs, logs, moss) -----
   // Imported lazily to avoid a circular import.
