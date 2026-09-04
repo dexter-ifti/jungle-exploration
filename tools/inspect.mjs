@@ -1,4 +1,4 @@
-// Check the actual LEAF_CARD_MATS material type
+// Verify the walker state evolves over time
 import { chromium } from 'playwright';
 
 async function main() {
@@ -9,31 +9,37 @@ async function main() {
   const r = await page.evaluate(() => !!window.__scene ? 'ready' : 'not ready');
   if (r !== 'ready') { console.log('not ready'); await browser.close(); return; }
 
-  // Sample 5 specific leaf-card meshes and report all their material props
-  const info = await page.evaluate(() => {
-    const scene = window.__scene;
-    const samples = [];
-    scene.traverse(o => {
-      if (!o.isMesh || !o.material) return;
-      const m = o.material;
-      // focus on materials with map AND alphaTest
-      if (m.map && m.alphaTest !== undefined) {
-        if (samples.length < 3) {
-          samples.push({
-            type: m.type,
-            map: !!m.map,
-            alphaTest: m.alphaTest,
-            transparent: m.transparent,
-            color: m.color ? m.color.getHexString() : 'no color',
-            posCount: o.geometry.attributes.position.count,
-            pos: o.position.toArray().map(x => +x.toFixed(1)),
-          });
-        }
-      }
+  // sample camera position at t=0.04, then at t=0.06, with W held
+  await page.evaluate(() => window.__setT(0.04));
+  await page.waitForTimeout(1000);
+  // simulate W press
+  await page.keyboard.down('KeyW');
+  await page.waitForTimeout(100);
+  const samples = [];
+  for (let i = 0; i < 6; i++) {
+    await page.waitForTimeout(200);
+    const pos = await page.evaluate(() => {
+      const c = window.__camera;
+      return c.position.toArray().map(x => +x.toFixed(3));
     });
-    return samples;
-  });
-  console.log(JSON.stringify(info, null, 2));
+    samples.push({ t: i * 0.2, pos });
+  }
+  await page.keyboard.up('KeyW');
+  await page.waitForTimeout(500);
+  // after releasing W, sample again to see decel
+  const afterStop = [];
+  for (let i = 0; i < 4; i++) {
+    await page.waitForTimeout(200);
+    const pos = await page.evaluate(() => {
+      const c = window.__camera;
+      return c.position.toArray().map(x => +x.toFixed(3));
+    });
+    afterStop.push({ t: i * 0.2, pos });
+  }
+  console.log('walking (W held):');
+  samples.forEach(s => console.log(`  +${s.t.toFixed(1)}s:`, s.pos));
+  console.log('after stop:');
+  afterStop.forEach(s => console.log(`  +${s.t.toFixed(1)}s:`, s.pos));
   await browser.close();
 }
 main();

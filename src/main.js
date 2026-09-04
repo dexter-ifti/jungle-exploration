@@ -37,13 +37,28 @@ if (hud) {
   addEventListener('mousedown', dismiss, { once: true });
 }
 
-// player walks the trail spline with head-bob-free smooth motion
+// player walks the trail spline. Realistic human motion:
+// - smooth velocity acceleration/deceleration (not instant)
+// - vertical head bob (1.7Hz walk, 2.5Hz run)
+// - lateral hip sway
+// - head leads body slightly when starting
 let t = 0.02;
 let strafe = 0;          // lateral offset perpendicular to the path, in metres
 const STRAFE_MAX = 4.0;  // clip so the player can't run off the side of the trail
+// velocity along the trail (t per second), with smooth accel/decel
+let trailVel = 0;       // t-units per second (positive = forward)
+const TRAIL_MAX_WALK = 0.0042;   // ~1.3 m/s on a 320m world
+const TRAIL_MAX_RUN  = 0.010;     // ~3.2 m/s
+const TRAIL_ACCEL = 0.006;        // how fast vel reaches max
+const TRAIL_DECEL = 0.012;        // how fast vel drops to 0 (faster stop)
 const keys = {};
 addEventListener('keydown', e => keys[e.code] = true);
 addEventListener('keyup', e => keys[e.code] = false);
+
+// step phase: increments by 2*PI per second when moving. Drives the
+// vertical bob and lateral sway. At walk speed (1.7Hz) the cycle is
+// ~0.6s. Bob amplitude scales with speed.
+let stepPhase = 0;
 
 const clock = new THREE.Clock();
 const _forward = new THREE.Vector3();
@@ -59,40 +74,105 @@ function animate() {
   water.update(clock.elapsedTime, dt);
   // System 6: update sound (spatial volumes based on player t)
   if (sound) sound.update(t, dt);
-  const speed = (keys['ShiftLeft'] ? 4.2 : 1.7);
-  if (keys['KeyW'] || keys['ArrowUp']) t += dt * speed / 320;
-  if (keys['KeyS'] || keys['ArrowDown']) t -= dt * speed / 320;
-  // Closed loop: t wraps mod 1 so the player can walk all the way
-  // around the circuit and end up at the same point. Walking in
-  // either direction brings you to the falls (t=0.5) at some point.
-  t = ((t % 1) + 1) % 1;
-  // lateral movement (A/D or Left/Right) — strafe perpendicular to the
-  // current path direction. Decays toward 0 so the player doesn't drift
-  // off and forget where they are.
-  const strafeSpeed = 3.2;
-  if (keys['KeyA'] || keys['ArrowLeft'])  strafe -= dt * strafeSpeed;
-  if (keys['KeyD'] || keys['ArrowRight']) strafe += dt * strafeSpeed;
-  // soft pull back toward the trail centre so the player doesn't end up
-  // permanently off the path. 25%/s decay.
-  strafe = THREE.MathUtils.clamp(strafe, -STRAFE_MAX, STRAFE_MAX);
-  strafe -= strafe * Math.min(1, dt * 0.25);
 
+  // -------- input → desired velocity (target) --------
+  const wantFwd = (keys['KeyW'] || keys['ArrowUp']) ? 1 : 0;
+  const wantBack = (keys['KeyS'] || keys['ArrowDown']) ? 1 : 0;
+  const wantStrafeL = (keys['KeyA'] || keys['ArrowLeft']) ? 1 : 0;
+  const wantStrafeR = (keys['KeyD'] || keys['ArrowRight']) ? 1 : 0;
+  const running = !!keys['ShiftLeft'];
+
+  // target trail velocity (t-units/s)
+  const maxV = running ? TRAIL_MAX_RUN : TRAIL_MAX_WALK;
+  const dir = wantFwd - wantBack;
+  const targetVel = dir * maxV;
+
+  // -------- smooth accel/decel of trail velocity --------
+  // accelerate when input present, decelerate (faster) when not
+  if (targetVel !== 0) {
+    // ramping up
+    const sign = Math.sign(targetVel - trailVel);
+    if (sign > 0) trailVel += TRAIL_ACCEL * dt;
+    else if (sign < 0) trailVel -= TRAIL_ACCEL * dt;
+  } else {
+    // ramping down toward 0
+    if (trailVel > 0) {
+      trailVel = Math.max(0, trailVel - TRAIL_DECEL * dt);
+    } else if (trailVel < 0) {
+      trailVel = Math.min(0, trailVel + TRAIL_DECEL * dt);
+    }
+  }
+  // clamp to max
+  trailVel = Math.max(-maxV, Math.min(maxV, trailVel));
+
+  // -------- strafe with same accel/decel model --------
+  const strafeMax = running ? 4.0 : 2.4;
+  const strafeAccel = 6.0;
+  let strafeTarget = (wantStrafeR - wantStrafeL) * strafeMax;
+  // pull-back-to-centre when no strafe input
+  if (strafeTarget === 0) strafeTarget = -strafe * 0.4;  // gentle spring-back
+  // spring toward target
+  strafe += (strafeTarget - strafe) * Math.min(1, dt * strafeAccel);
+  strafe = THREE.MathUtils.clamp(strafe, -STRAFE_MAX, STRAFE_MAX);
+
+  // -------- advance t by velocity (closed loop) --------
+  t = ((t + trailVel * dt + 1) % 1 + 1) % 1;
+
+  // -------- compute body position along the trail --------
   const p = TRAIL.getPointAt(t);
-  const ahead = TRAIL.getPointAt(t + 0.01);
-  const lookT = t + 0.025;
-  const look = TRAIL.getPointAt(lookT);
+  // look ahead a small distance for the camera direction. The look-ahead
+  // is slightly larger when moving faster (head leads body more at speed).
+  const lookAhead = 0.012 + Math.abs(trailVel) * 1.4;
+  const lookT = t + Math.sign(trailVel || 0.001) * lookAhead;
+  const look = TRAIL.getPointAt(((lookT % 1) + 1) % 1);
+
   // forward direction in the xz plane (ignore y), then right = forward x up
   _forward.set(look.x - p.x, 0, look.z - p.z).normalize();
   _right.crossVectors(_forward, _up).normalize();
   // apply strafe offset
   const sx = p.x + _right.x * strafe;
   const sz = p.z + _right.z * strafe;
-  camera.position.set(sx, terrainHeight(sx, sz) + 1.68, sz);
-  // ease yaw toward path direction (uses the un-strafed forward so
-  // the camera always faces along the trail, not the offset)
-  const targetLook = new THREE.Vector3(look.x, terrainHeight(look.x, look.z) + 1.5, look.z);
+  const groundY = terrainHeight(sx, sz);
+
+  // -------- body bob & sway (only when actually moving) --------
+  // speed (m/s) for the bob frequency: walk ~1.3, run ~3.2
+  const speedAbs = Math.abs(trailVel) * 320;  // convert t-vel to approx m/s
+  // step frequency scales with speed (1.7Hz walk, 2.5Hz run)
+  const stepHz = 1.5 + Math.min(speedAbs / 1.5, 1.0) * 0.9;
+  stepPhase += dt * stepHz * Math.PI * 2;
+  if (stepPhase > Math.PI * 2) stepPhase -= Math.PI * 2;
+  // bob amplitude: 4cm at walk, 9cm at run
+  const bobAmp = (Math.min(speedAbs, 3.2) / 1.3) * 0.04 + 0.02;
+  const headBob = Math.abs(Math.sin(stepPhase)) * bobAmp;
+  // lateral sway: 1.5cm at walk, 2.5cm at run
+  const swayAmp = (Math.min(speedAbs, 3.2) / 1.3) * 0.015 + 0.01;
+  // sway is twice the step freq (each step shifts weight to other side)
+  const headSway = Math.sin(stepPhase * 2) * swayAmp;
+  // sway is along the right vector (lateral shift)
+  const swayX = _right.x * headSway;
+  const swayZ = _right.z * headSway;
+
+  // -------- camera position --------
+  // eye height 1.68m, plus bob
+  camera.position.set(sx + swayX, groundY + 1.68 + headBob, sz + swayZ);
+  // camera look: same look point but slightly down when bobbed (head
+  // bobs down so the eye line tilts down briefly)
+  const eyeDrop = headBob * 0.3;  // small downward tilt on each down-step
+  const targetLook = new THREE.Vector3(
+    look.x + swayX,
+    terrainHeight(look.x, look.z) + 1.5 - eyeDrop,
+    look.z + swayZ
+  );
   camera.lookAt(targetLook);
-  void ahead;
+
+  // -------- trigger footstep sounds on each step --------
+  // detect the moment the step phase crosses PI (i.e. each footfall)
+  if (sound && speedAbs > 0.2) {
+    if (Math.sin(stepPhase) < -0.95 && (sound._lastStepT === undefined || clock.elapsedTime - sound._lastStepT > 0.3)) {
+      sound.step(running ? 'run' : 'walk');
+      sound._lastStepT = clock.elapsedTime;
+    }
+  }
 
   // System 7: render through the post-processing composer.
   // Pass the visible sun disk's world position (the bright sphere that

@@ -370,4 +370,42 @@ export class JungleSound {
       this.layers.nearbyBirds.gain.linearRampToValueAtTime(vol, this.ctx.currentTime + 0.5);
     }
   }
+
+  // ---------- footstep ----------
+  // Triggered by the walker on each step. Produces a short noise
+  // burst with a low-pass-filtered transient — the classic
+  // "crunch" of a footfall on dirt/leaf litter. volume scales
+  // with the gait ('run' is louder than 'walk') and we randomise
+  // pitch a bit so consecutive steps don't sound identical.
+  step(gait = 'walk') {
+    if (!this.ctx || !this.enabled) return;
+    const now = this.ctx.currentTime;
+    const t0 = now + 0.001;
+    // short white-noise buffer (~80ms)
+    const dur = 0.08;
+    const sr = this.ctx.sampleRate;
+    const len = Math.floor(sr * dur);
+    const buf = this.ctx.createBuffer(1, len, sr);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      // fast decay envelope
+      const env = Math.exp(-i / (sr * 0.025));
+      data[i] = (Math.random() * 2 - 1) * env;
+    }
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    // low-pass for the "soft crunch" of leaves/dirt (not a hard click)
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 800 + Math.random() * 600;
+    const g = this.ctx.createGain();
+    const vol = gait === 'run' ? 0.22 : 0.12;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    src.connect(filter);
+    filter.connect(g);
+    g.connect(this.master);
+    src.start(t0);
+  }
 }
