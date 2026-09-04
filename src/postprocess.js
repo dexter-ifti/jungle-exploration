@@ -32,11 +32,11 @@ const GodRaysShader = {
   uniforms: {
     tDiffuse: { value: null },
     uSunScreen: { value: new THREE.Vector2(0.5, 0.85) },   // sun's 2D screen pos (UV space)
-    uExposure:   { value: 0.28 },                         // how bright the rays are
+    uExposure:   { value: 0.35 },                         // how bright the rays are
     uDecay:      { value: 0.965 },                        // brightness falloff per sample
     uDensity:    { value: 0.95 },                         // sample spacing
-    uWeight:     { value: 0.50 },                         // per-sample weight
-    uTint:       { value: new THREE.Color(1.0, 0.92, 0.72) },
+    uWeight:     { value: 0.52 },                         // per-sample weight
+    uTint:       { value: new THREE.Color(1.0, 0.88, 0.58) },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -84,20 +84,15 @@ const GodRaysShader = {
 const ColorGradeShader = {
   uniforms: {
     tDiffuse: { value: null },
-    lift:    { value: new THREE.Vector3(0.0, 0.02, 0.04) },   // dark areas: push blue
-    gamma:   { value: new THREE.Vector3(1.0, 1.0, 0.98) },     // midtones: subtle warm
-    gain:    { value: new THREE.Vector3(1.05, 1.02, 0.96) },   // highlights: warm
-    saturation: { value: 1.08 },                              // overall saturation boost
-    vignetteStrength: { value: 0.55 },
-    vignetteFalloff:  { value: 0.6 },
-    // volumetric fog approximation: tints the whole frame with
-    // warm green-yellow at distance, simulating atmospheric haze.
-    // The "volumetric" feel comes from the per-pixel radial fog
-    // gradient (denser toward the sun) combined with the existing
-    // god rays pass above.
-    fogTint:  { value: new THREE.Color(0xc4d3a8) },           // warm sage-green
-    fogStart: { value: 0.35 },                                  // 0-1, distance start
-    fogEnd:   { value: 0.95 },                                  // 0-1, full fog
+    lift:    { value: new THREE.Vector3(0.006, 0.008, 0.014) },  // film black floor
+    gamma:   { value: new THREE.Vector3(0.99, 1.00, 0.98) },     // lush warm midtones
+    gain:    { value: new THREE.Vector3(0.99, 0.94, 0.80) },     // golden sunlight
+    saturation: { value: 1.10 },                               // rich tropical greens
+    vignetteStrength: { value: 0.50 },
+    vignetteFalloff:  { value: 0.65 },
+    fogTint:  { value: new THREE.Color(0x283818) },
+    fogStart: { value: 0.45 },
+    fogEnd:   { value: 0.95 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -139,10 +134,8 @@ const ColorGradeShader = {
       // distance from center. Center is closer to camera (less fog),
       // edges are farther (more fog). Combined with the scene fog
       // this gives a layered depth feel.
-      float fogFactor = smoothstep(fogStart, fogEnd, dist * 1.4);
-      col = mix(col, fogTint, fogFactor * 0.18);
       // vignette
-      float v = 1.0 - vignetteStrength * smoothstep(0.4, 0.8, dist / vignetteFalloff);
+      float v = 1.0 - vignetteStrength * smoothstep(0.35, 0.85, dist / vignetteFalloff);
       col *= v;
       gl_FragColor = vec4(col, 1.0);
     }
@@ -167,9 +160,9 @@ export class JunglePostprocess {
     // subtle bloom — picks up the sun shafts, waterfall white, god rays
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.55,   // strength (bumped — bloom + god rays together sells the look)
-      0.5,    // radius
-      0.78,   // threshold
+      0.60,   // strength
+      0.45,   // radius
+      0.72,   // threshold
     );
     this.composer.addPass(this.bloomPass);
     // color grading + vignette

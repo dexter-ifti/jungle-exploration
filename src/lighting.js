@@ -91,9 +91,10 @@ export class JungleLighting {
     const skyCv = document.createElement('canvas'); skyCv.width = 4; skyCv.height = 256;
     const sctx = skyCv.getContext('2d');
     const grad = sctx.createLinearGradient(0, 0, 0, 256);
-    grad.addColorStop(0, '#a8c8d8');        // upper sky (cool blue)
-    grad.addColorStop(0.45, '#c2d6c4');     // mid sky (pale green-white)
-    grad.addColorStop(1, '#b6c4a8');        // horizon haze
+    grad.addColorStop(0, '#324838');        // upper canopy
+    grad.addColorStop(0.4, '#486044');      // mid canopy foliage
+    grad.addColorStop(0.75, '#7a8854');     // warm filtered sun haze
+    grad.addColorStop(1, '#525e3e');        // horizon canopy
     sctx.fillStyle = grad; sctx.fillRect(0, 0, 4, 256);
     const skyTex = new THREE.CanvasTexture(skyCv);
     skyTex.colorSpace = THREE.SRGBColorSpace;
@@ -107,9 +108,9 @@ export class JungleLighting {
     // pass needs the sun to be in front of the camera for the rays
     // to read as light shafts. The sun casts warm light onto the
     // forward-facing sides of the canopies.
-    const sun = new THREE.DirectionalLight(0xfff0d0, 3.2);
-    sun.position.set(-80, 130, -200);  // forward (z=-200) and above+left
-    sun.target.position.set(0, 0, -260);
+    const sun = new THREE.DirectionalLight(0xffecc0, 3.6);
+    sun.position.set(40, 140, -180);  // forward and right
+    sun.target.position.set(-10, 0, -240);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.left = -200;
@@ -132,7 +133,7 @@ export class JungleLighting {
     // real source. frustumCulled = false because the sphere is at
     // ~300m and the bounding sphere is small relative to the camera.
     const sunDisk = new THREE.Mesh(
-      new THREE.SphereGeometry(15, 16, 12),
+      new THREE.SphereGeometry(22, 16, 12),
       new THREE.MeshBasicMaterial({ color: 0xfff8e0, fog: false }),
     );
     sunDisk.position.copy(sun.position).multiplyScalar(1.6);
@@ -141,20 +142,18 @@ export class JungleLighting {
     this.sunDisk = sunDisk;
 
     // ----- hemisphere (cool sky + warm ground bounce) -----
-    const hemi = new THREE.HemisphereLight(0xbedfe4, 0x4a3e26, 1.6);
+    const hemi = new THREE.HemisphereLight(0x6e8862, 0x3d3222, 1.4);
     this.hemi = hemi;
     this.group.add(hemi);
 
     // ----- canopy green fill -----
-    // A dim green directional light from above-ish, simulating light
-    // bouncing off the upper canopy into the lower scene.
-    const canopyFill = new THREE.DirectionalLight(0x6a8a4a, 0.9);
+    const canopyFill = new THREE.DirectionalLight(0x406028, 0.7);
     canopyFill.position.set(-30, 60, -20);
     this.canopyFill = canopyFill;
     this.group.add(canopyFill);
 
     // ----- secondary warm fill from the front-right (side bounce) -----
-    const sideFill = new THREE.DirectionalLight(0xfff0c0, 0.4);
+    const sideFill = new THREE.DirectionalLight(0xffe090, 0.5);
     sideFill.position.set(60, 50, 40);
     this.group.add(sideFill);
 
@@ -172,10 +171,9 @@ export class JungleLighting {
     }
 
     // ----- thicker, greener atmospheric fog -----
-    scene.fog = new THREE.FogExp2(0xc6d3b0, 0.011);
-    // bump exposure slightly to compensate
+    scene.fog = new THREE.FogExp2(0x222e1e, 0.0070);
     if (scene.userData.renderer) {
-      scene.userData.renderer.toneMappingExposure = 0.95;
+      scene.userData.renderer.toneMappingExposure = 0.85;
     }
 
     // ----- god ray billboards -----

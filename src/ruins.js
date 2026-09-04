@@ -45,7 +45,7 @@ function makeStoneBlock(w, h, d, seed, moss = 0.0) {
     const x = pos.getX(i);
     const z = pos.getZ(i);
     // base stone
-    let r = 0.42, g = 0.40, b = 0.34;
+    let r = 0.52, g = 0.48, b = 0.36;
     const weathered = N.fbm(x * 1.2 + seed, z * 1.2 + seed, 3) * 0.5 + 0.5;
     r += (weathered - 0.5) * 0.18;
     g += (weathered - 0.5) * 0.16;
@@ -116,7 +116,7 @@ function makeColumn(radius, height, breakT, seed) {
     const y = positions[i * 3 + 1];
     const x = positions[i * 3];
     const z = positions[i * 3 + 2];
-    let r = 0.46, g = 0.44, b = 0.36;
+    let r = 0.52, g = 0.48, b = 0.36;
     const weathered = N.fbm(x * 1.5 + seed, z * 1.5 + seed, 3) * 0.5 + 0.5;
     r += (weathered - 0.5) * 0.14;
     g += (weathered - 0.5) * 0.12;
@@ -276,50 +276,75 @@ function addMossPatch(scene, x, y, z, radius, seed) {
 // end. Returns metadata about what was placed.
 export function placeRuins(scene) {
   // center of the clearing
-  const trailEnd = TRAIL.getPoint(1);
-  const cx = trailEnd.x * 0.5;
-  const cz = WORLD.waterfallZ + 36;  // a bit forward of the trail end, in the clearing
+  const cx = -20;
+  const cz = WORLD.waterfallZ + 28;
   const placed = [];
 
-  // temple footprint: a low platform/stepped structure
-  // a 3-tier platform
-  for (let tier = 0; tier < 3; tier++) {
-    const t = tier / 2;
-    const w = 9 - t * 1.5;
-    const d = 7 - t * 1.2;
-    const h = 0.6;
-    const x = cx - 2 + t * 1;
-    const z = cz - 1 + t * 0.5;
-    placed.push(placeBlock(scene, x, z, w, h, d, 0.05 * tier, 1000 + tier, 0.4));
+  // temple footprint: a 4-tier stepped stone platform
+  for (let tier = 0; tier < 4; tier++) {
+    const t = tier / 3;
+    const w = 13 - t * 2.5;
+    const d = 10 - t * 2.0;
+    const h = 0.65;
+    const x = cx;
+    const z = cz + t * 0.4;
+    placed.push(placeBlock(scene, x, z, w, h, d, 0.02 * tier, 1000 + tier, 0.45));
   }
 
-  // 2 broken columns at the front of the platform
-  for (let i = 0; i < 2; i++) {
-    const colX = cx - 2.5 + i * 5;
-    const colZ = cz - 3.5;
-    const colH = 3.5 + N.noise2(200 + i, 1) * 1.5;
-    const breakT = 0.5 + N.noise2(200 + i, 7) * 0.4;  // broken at 50-90% up
-    placed.push(placeColumn(scene, colX, colZ, colH, breakT, 200 + i));
+  // Stone steps leading up the front
+  for (let step = 0; step < 3; step++) {
+    const sw = 4.2;
+    const sd = 0.8;
+    const sh = 0.25;
+    const sx = cx;
+    const sz = cz - 4.8 - step * 0.7;
+    placed.push(placeBlock(scene, sx, sz, sw, sh, sd, 0, 1100 + step, 0.3));
   }
 
-  // a back wall - 2-3 blocks
-  for (let i = 0; i < 3; i++) {
-    const bx = cx - 1.5 + i * 1.5;
-    const bz = cz + 2.0;
-    const bw = 1.4;
-    const bh = 1.6 + N.noise2(300 + i, 1) * 0.8;
-    const bd = 0.8;
-    const ry = (N.noise2(300 + i, 3) - 0.5) * 0.3;
-    placed.push(placeBlock(scene, bx, bz, bw, bh, bd, ry, 300 + i, 0.5));
+  // Columns: colonnade / temple portico
+  const colPositions = [
+    { x: cx - 4.2, z: cz - 3.4, h: 4.8, breakT: 1.0 },
+    { x: cx - 1.4, z: cz - 3.4, h: 4.8, breakT: 1.0 },
+    { x: cx + 1.4, z: cz - 3.4, h: 4.8, breakT: 0.75 },
+    { x: cx + 4.2, z: cz - 3.4, h: 4.8, breakT: 0.5 },
+    { x: cx - 4.2, z: cz + 1.8, h: 4.2, breakT: 0.6 },
+    { x: cx + 4.2, z: cz + 1.8, h: 4.2, breakT: 0.85 },
+  ];
+  for (let i = 0; i < colPositions.length; i++) {
+    const c = colPositions[i];
+    placed.push(placeColumn(scene, c.x, c.z, c.h, c.breakT, 200 + i));
+  }
+
+  // Lintel beam spanning the two intact standing columns
+  const lintelW = 3.6, lintelH = 0.6, lintelD = 0.8;
+  const lintelX = (cx - 4.2 + cx - 1.4) * 0.5;
+  const lintelZ = cz - 3.4;
+  const lintelY = terrainHeight(lintelX, lintelZ) + 4.8 + lintelH * 0.5;
+  const lintelGeo = makeStoneBlock(lintelW, lintelH, lintelD, 1250, 0.4);
+  const lintelMesh = new THREE.Mesh(lintelGeo, stoneMat());
+  lintelMesh.position.set(lintelX, lintelY, lintelZ);
+  lintelMesh.castShadow = true; lintelMesh.receiveShadow = true;
+  scene.add(lintelMesh);
+  placed.push(lintelMesh);
+
+  // a back wall of weathered blocks
+  for (let i = 0; i < 4; i++) {
+    const bx = cx - 2.8 + i * 1.8;
+    const bz = cz + 3.0;
+    const bw = 1.6;
+    const bh = 2.2 + N.noise2(300 + i, 1) * 0.8;
+    const bd = 0.9;
+    const ry = (N.noise2(300 + i, 3) - 0.5) * 0.2;
+    placed.push(placeBlock(scene, bx, bz, bw, bh, bd, ry, 300 + i, 0.55));
   }
 
   // a side wall fragment
   for (let i = 0; i < 2; i++) {
-    const sx = cx + 3.5;
-    const sz = cz - 1.0 + i * 1.5;
+    const sx = cx + 4.5;
+    const sz = cz - 1.0 + i * 1.6;
     const sw = 0.8;
-    const sh = 1.2 + N.noise2(400 + i, 1) * 0.6;
-    const sd = 1.0;
+    const sh = 1.5 + N.noise2(400 + i, 1) * 0.6;
+    const sd = 1.1;
     const ry = Math.PI / 2 + (N.noise2(400 + i, 3) - 0.5) * 0.2;
     placed.push(placeBlock(scene, sx, sz, sw, sh, sd, ry, 400 + i, 0.5));
   }

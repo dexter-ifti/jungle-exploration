@@ -53,41 +53,26 @@ export { makeNoise };
 function buildTrail() {
   const pts = [];
   const n = 280;
-  // the trail is a closed loop. t=0 and t=1 are the trailhead (start).
-  // t=0.5 is the falls. the loop goes: trailhead -> falls -> return
-  // leg back to trailhead. the return leg swings out wide in x but
-  // stays within the world bounds (WORLD.size/2 = 320m from center).
   for (let i = 0; i <= n; i++) {
     const t = i / n;
-    // z oscillates: t=0 (trailhead, z=60) -> t=0.5 (falls, z=waterfallZ+18)
-    // -> t=1 (back to trailhead, z=60). Use a half-cosine so the
-    // walk is forward then back in z.
-    const zPhase = 1 - Math.cos(t * Math.PI * 2) * 0.5;  // 0 at t=0, 1 at t=0.5, 0 at t=1
+    const zPhase = (1 - Math.cos(t * Math.PI * 2)) * 0.5;
     const z = THREE.MathUtils.lerp(60, WORLD.waterfallZ + 18, zPhase);
-    // x: large meander on the forward leg, swing out wide on the
-    // return leg (so the loop forms a clear circuit in the world)
-    const isReturn = t > 0.55;
-    const damp = THREE.MathUtils.smoothstep(t, 0.72, 0.95) * (1 - isReturn);
-    // on the return leg, sweep the trail in a big arc to the east
-    // of the world so the loop is visibly a circuit
-    const returnT = (t - 0.55) / 0.45;  // 0 at t=0.55, 1 at t=1
-    const returnArc = isReturn
-      ? Math.sin(returnT * Math.PI) * 90 - 20   // arc from -20 to +70 in x
-      : 0;
-    const sign = isReturn ? -1 : 1;
-    const x =
-      sign * (
-        Math.sin(t * Math.PI * 2.35 + 0.7) * 34 * (1 - damp * 0.9) +
-        Math.sin(t * Math.PI * 7.1 + 2.3) * 8 * (1 - damp * 0.85) +
-        Math.sin(t * Math.PI * 13.7) * 2.2 * (1 - damp) +
-        (N.fbm(t * 3.1, 11.3, 3) * 6) * (1 - damp * 0.7)
-      ) + returnArc;
+    const baseMeander =
+      Math.sin(t * Math.PI * 2.35 + 0.7) * 32 +
+      Math.sin(t * Math.PI * 7.1 + 2.3) * 7 +
+      Math.sin(t * Math.PI * 13.7) * 2.0 +
+      (N.fbm(t * 3.1, 11.3, 3) * 5);
+    let x;
+    if (t <= 0.5) {
+      x = baseMeander;
+    } else {
+      const returnT = (t - 0.5) / 0.5;
+      const returnArc = Math.sin(returnT * Math.PI) * 60;
+      const blend = 1 - returnT;
+      x = -baseMeander * blend + baseMeander * (1 - blend) + returnArc;
+    }
     pts.push(new THREE.Vector3(x, 0, z));
   }
-  // closed=true: the spline wraps from the last point back to the
-  // first, forming a loop. CatmullRomCurve3 with closed=true ensures
-  // the player can walk all the way around the spline and end up
-  // where they started.
   return new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.5);
 }
 
@@ -158,7 +143,7 @@ export function baseHeight(x, z) {
   }
 
   // ruins/waterfall clearing: broad flat basin near the end of the trail
-  const cz = WORLD.waterfallZ + 26, cx = TRAIL.getPoint(1).x * 0.6;
+  const cz = WORLD.waterfallZ + 26, cx = -20;
   const cd = Math.hypot(x - cx, (z - cz) * 0.8);
   if (cd < 62) {
     const t = THREE.MathUtils.smoothstep(cd, 20, 62);
@@ -346,7 +331,7 @@ function mergeGeometries(geos) {
   const nor = new Float32Array(vCount * 3);
   let o = 0;
   for (const g of geos) {
-    const gg = g.toNonIndexed();
+    const gg = g.index ? g.toNonIndexed() : g;
     pos.set(gg.attributes.position.array, o);
     nor.set(gg.attributes.normal.array, o);
     o += gg.attributes.position.array.length;

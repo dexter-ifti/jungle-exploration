@@ -111,8 +111,8 @@ function makeCanopyMaterial(variant) {
     // reads as "backlit green" rather than "dark blob on stick".
     // This is the dominant effect in the reference images where
     // leaves glow translucent at their edges.
-    emissive: new THREE.Color(0x4a7a30),
-    emissiveIntensity: 0.95,
+    emissive: new THREE.Color(0x1e3314),
+    emissiveIntensity: 0.35,
   });
   return mat;
 }
@@ -266,7 +266,7 @@ function mergeLite(geos) {
   let vCount = 0;
   const all = [];
   for (const g of geos) {
-    const gg = g.toNonIndexed();
+    const gg = g.index ? g.toNonIndexed() : g;
     all.push(gg);
     vCount += gg.attributes.position.count;
   }
@@ -1319,7 +1319,7 @@ function scatterTrees(scene, opts) {
     if (slope > 4.5) continue;
     // skip if inside the ruins clearing (System 4) so the player can
     // actually see the temple. Ruins are centered at (0, WORLD.waterfallZ+36).
-    const rcx = 0, rcz = WORLD.waterfallZ + 36;
+    const rcx = -20, rcz = WORLD.waterfallZ + 26;
     if (Math.hypot(x - rcx, (z - rcz) * 0.8) < 16) continue;
     // skip the cliff face (System 5 waterfall) — the cliff is at z < waterfallZ
     // and we don't want trees sticking out of the rock wall.
