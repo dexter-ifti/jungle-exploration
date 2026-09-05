@@ -6,6 +6,8 @@ const { scene, camera, renderer, lighting, water, character, postprocess } = awa
 window.__scene = scene; // debug hook for render harness
 window.__camera = camera;
 window.__renderer = renderer;
+window.__terrainHeight = terrainHeight;
+window.__TRAIL = TRAIL;
 // expose THREE for debug
 import * as __THREE from 'three';
 window.__THREE = __THREE;
@@ -129,8 +131,16 @@ addEventListener('mouseup', () => {
   isDragging = false;
 });
 
-// Desktop keyboard controls
+// Desktop keyboard controls (exposed for headless harness)
 const keys = {};
+window.__keys = keys;
+window.__getState = () => ({ t, strafe, trailVel, strafeVel, lookYaw, lookPitch });
+window.__setKey = (code, down) => { keys[code] = !!down; };
+window.__simulateJoystick = (x, y, running=false) => {
+  // emulate left joystick: x strafe -1..1, y forward -1..1
+  if (x===0 && y===0) { moveTouchId=null; moveVec.x=0; moveVec.y=0; moveIsRunning=false; }
+  else { moveTouchId=999; moveVec.x=x; moveVec.y=y; moveIsRunning=running; }
+};
 addEventListener('keydown', e => keys[e.code] = true);
 addEventListener('keyup', e => keys[e.code] = false);
 
