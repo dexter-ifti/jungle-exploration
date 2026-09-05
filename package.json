@@ -7,7 +7,9 @@
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "blender:mcp": "node ./node_modules/blender-mcp/dist/index.js",
+    "blender:check": "blender --version && echo \"blender-mcp $(node -p \"require('./node_modules/blender-mcp/package.json').version\") ready\""
   },
   "repository": {
     "type": "git",
@@ -26,6 +28,7 @@
     "vite": "^8.2.2"
   },
   "devDependencies": {
+    "blender-mcp": "^1.0.1",
     "playwright": "^1.62.1"
   }
 }

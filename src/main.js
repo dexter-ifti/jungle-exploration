@@ -239,7 +239,7 @@ const handleTouchEnd = e => {
 addEventListener('touchend', handleTouchEnd, { passive: true });
 addEventListener('touchcancel', handleTouchEnd, { passive: true });
 
-// render-harness hook (no gameplay effect) — resets state for deterministic renders
+// render-harness hook — deterministic renders reset movement & camera
 window.__setT = v => {
   t = ((v % 1) + 1) % 1;
   trailVel = 0;
@@ -249,6 +249,12 @@ window.__setT = v => {
   stepPhase = 0;
   lookYaw = 0;
   lookPitch = 0;
+  if (character && character.group) {
+    const p = TRAIL.getPointAt(t);
+    const y = terrainHeight(p.x, p.z);
+    const f = TRAIL.getTangentAt(t);
+    character.setPosition(p.x, y, p.z, Math.atan2(f.x, f.z));
+  }
 };
 
 const clock = new THREE.Clock();
@@ -265,8 +271,6 @@ function animate() {
   lighting.update(clock.elapsedTime, dt);
   // System 5: animate water (splash particles, pool texture)
   water.update(clock.elapsedTime, dt);
-  // Guide character idle animation
-  if (character) character.update(clock.elapsedTime, dt);
   // System 6: update sound (spatial volumes based on player t)
   if (sound) sound.update(t, dt);
 
@@ -353,62 +357,66 @@ function animate() {
   const sz = p.z + _right.z * strafe;
   const groundY = terrainHeight(sx, sz);
 
-  // -------- realistic humanoid gait & head motion --------
+  // Keep walkable character collided to terrain and facing travel direction
+  let targetCharYaw = Math.atan2(_forward.x, _forward.z);
+  if (Math.abs(strafeVel) > 0.15) targetCharYaw += Math.atan2(strafeVel * 0.18, 1.0);
+  if (character) {
+    character.group.position.set(sx, groundY, sz);
+    // animate gait before camera so hips bob is visible
+    const speedMpsPre = Math.abs(trailVel) * 320 + Math.abs(strafeVel);
+    const isMovingPre = speedMpsPre > 0.12 || Math.abs(trailVel) > 0.00012 || Math.abs(strafeVel) > 0.12;
+    character.update(clock.elapsedTime, dt, { speed: speedMpsPre, isMoving: isMovingPre, isRunning: running, yaw: targetCharYaw });
+  }
+  if (sound) sound.update(t, dt);
+
+  // -------- realistic third-person chase camera + subtle first-person gait --------
   const speedMps = Math.abs(trailVel) * 320 + Math.abs(strafeVel);
   smoothSpeed = THREE.MathUtils.damp(smoothSpeed, speedMps, 7.0, dt);
 
-  // Step frequency (Hz): ~1.6Hz walk, ~2.5Hz run
   const stepHz = 1.4 + Math.min(smoothSpeed / 2.2, 1.0) * 1.0;
   if (smoothSpeed > 0.08) {
     stepPhase += dt * stepHz * Math.PI * 2;
     if (stepPhase > Math.PI * 2) stepPhase -= Math.PI * 2;
   }
 
-  // Double-harmonic smooth vertical head bob (inverted pendulum)
   const bobFactor = Math.min(smoothSpeed / 1.3, 2.4);
   const bobAmp = 0.024 + bobFactor * 0.032;
   const bobWave = (1.0 - Math.cos(stepPhase * 2.0)) * 0.5;
   const headBob = bobWave * bobAmp;
 
-  // Single-harmonic lateral hip sway (one cycle per stride: left on step 1, right on step 2)
   const swayAmp = 0.014 + bobFactor * 0.020;
   const swayWave = Math.sin(stepPhase);
   const headSway = swayWave * swayAmp;
 
-  // Natural head roll (cervical balance compensation + banking into turns/strafe)
   const rollFromSway = -swayWave * (0.010 + bobFactor * 0.012);
   const rollFromStrafe = -(strafeVel / (running ? STRAFE_SPEED_RUN : STRAFE_SPEED_WALK)) * 0.020;
   const headRoll = rollFromSway + rollFromStrafe;
 
-  // Subtle nodding pitch dip on heel strike
   const pitchDip = Math.sin(stepPhase * 2.0) * (0.003 + bobFactor * 0.007);
 
-  // Organic idle motion when resting (breathing and gentle weight shifts)
   const idleWeight = Math.max(0, 1.0 - smoothSpeed / 0.4);
   const breatheY = Math.sin(clock.elapsedTime * 1.6) * 0.009 * idleWeight;
   const idleSwayX = Math.sin(clock.elapsedTime * 0.8) * 0.005 * idleWeight;
   const idlePitch = Math.sin(clock.elapsedTime * 1.6) * 0.003 * idleWeight;
 
-  const totalSwayX = _right.x * (headSway + idleSwayX);
-  const totalSwayZ = _right.z * (headSway + idleSwayX);
+  // Chase offset behind the walkable character (third-person). lookYaw orbits.
+  const chaseDist = running ? 3.0 : 3.6;
+  const chaseHeight = 1.55;
+  const camYaw = targetCharYaw + lookYaw;
+  const offX = -Math.sin(camYaw) * chaseDist;
+  const offZ = -Math.cos(camYaw) * chaseDist;
+  const swayOffX = _right.x * (headSway + idleSwayX);
+  const swayOffZ = _right.z * (headSway + idleSwayX);
 
-  // Camera height with smooth ground following (damps terrain mesh polygon seams)
-  const targetCamY = groundY + 1.68 + headBob + breatheY;
+  const targetCamY = groundY + chaseHeight + headBob + breatheY;
   if (camY === 0) camY = targetCamY;
   else camY = THREE.MathUtils.damp(camY, targetCamY, 15.0, dt);
 
-  camera.position.set(sx + totalSwayX, camY, sz + totalSwayZ);
+  camera.position.set(sx + offX + swayOffX, camY, sz + offZ + swayOffZ);
+  // look at character head (so walk/run anim reads), slightly lead forward
+  const lookAtY = groundY + 1.45 + headBob * 0.25;
+  camera.lookAt(sx + swayOffX * 0.35, lookAtY, sz + swayOffZ * 0.35);
 
-  // Base look direction facing forward along the trail
-  const targetLook = new THREE.Vector3(
-    look.x + totalSwayX,
-    terrainHeight(look.x, look.z) + 1.5,
-    look.z + totalSwayZ
-  );
-  camera.lookAt(targetLook);
-
-  // Apply free-look yaw/pitch and head roll on top
-  camera.rotateOnWorldAxis(_up, lookYaw);
   camera.rotateX(lookPitch + pitchDip + idlePitch);
   camera.rotateZ(headRoll);
 

@@ -1,12 +1,16 @@
-// Procedural 3D character — Jungle Explorer Guide
-// Zero external assets: all geometry is Three.js primitives with
-// standard materials. Placed beside the trailhead so the player
-// sees a human scale reference on spawn.
+// Procedural 3D walkable character — Jungle Explorer Guide
+// Zero external assets: Three.js primitives with standard materials.
+// Blender MCP is available (blender 4.0.2 + blender-mcp 1.0.1) but procedural
+// primitives are used to keep the build self-contained and headless-safe.
+// A Blender-generated GLTF path is supported (see optional GLTF loader below)
+// but the default is pure procedural so `npm run build` never needs Blender.
 //
-// Hierarchy (all pivots for idle animation):
-//   group (ground) -> hips -> torso, backpack, head group, armL/R, legL/R
+// Hierarchy:
+//   group (world) -> hips -> torso, pack, headG, armL/R, legL/R
+// Animations: idle (breath), walk, run — all via procedural limb swings.
+// Collision: world.js terrainHeight() is sampled externally; this module
+//            only handles visuals and gait phase.
 import * as THREE from 'three';
-import { TRAIL, terrainHeight } from './world.js';
 
 export function placeCharacter(scene) {
   const mats = {
@@ -36,48 +40,37 @@ export function placeCharacter(scene) {
     return m;
   };
 
-  // ----- torso (shirt) -----
+  // ----- torso -----
   const torso = addMesh(hips, new THREE.CapsuleGeometry(0.21, 0.42, 4, 12), mats.shirt, 0, 0.28, 0);
   torso.scale.set(1.15, 1, 0.82);
-  // shirt collar / placket detail
-  addMesh(hips, new THREE.BoxGeometry(0.1, 0.3, 0.02), mats.shirtDark, 0, 0.3, 0.17);
-  // belt
+  addMesh(hips, new THREE.BoxGeometry(0.10, 0.30, 0.02), mats.shirtDark, 0, 0.30, 0.17);
   addMesh(hips, new THREE.CylinderGeometry(0.215, 0.225, 0.07, 12), mats.strap, 0, -0.02, 0);
 
-  // ----- backpack (behind, -z is back when facing +z) -----
-  const pack = addMesh(hips, new THREE.BoxGeometry(0.34, 0.46, 0.2), mats.pack, 0, 0.3, -0.28);
-  pack.geometry.translate(0, 0, 0); // keep pivot centered
-  // bedroll on top of pack
-  const roll = addMesh(hips, new THREE.CylinderGeometry(0.09, 0.09, 0.4, 10), mats.packRoll, 0, 0.56, -0.28);
+  // ----- backpack (character front = +Z, so pack is -Z) -----
+  addMesh(hips, new THREE.BoxGeometry(0.34, 0.46, 0.20), mats.pack, 0, 0.30, -0.28);
+  const roll = addMesh(hips, new THREE.CylinderGeometry(0.09, 0.09, 0.40, 10), mats.packRoll, 0, 0.56, -0.28);
   roll.rotation.z = Math.PI / 2;
-  // straps over shoulders
-  addMesh(hips, new THREE.BoxGeometry(0.07, 0.4, 0.02), mats.strap, -0.13, 0.32, 0.17);
-  addMesh(hips, new THREE.BoxGeometry(0.07, 0.4, 0.02), mats.strap, 0.13, 0.32, 0.17);
+  addMesh(hips, new THREE.BoxGeometry(0.07, 0.40, 0.02), mats.strap, -0.13, 0.32, 0.17);
+  addMesh(hips, new THREE.BoxGeometry(0.07, 0.40, 0.02), mats.strap, 0.13, 0.32, 0.17);
 
   // ----- head -----
   const headG = new THREE.Group();
   headG.position.set(0, 0.62, 0);
   hips.add(headG);
-  addMesh(headG, new THREE.SphereGeometry(0.13, 18, 14), mats.skin, 0, 0.1, 0.01);
-  // nose hint
+  addMesh(headG, new THREE.SphereGeometry(0.13, 18, 14), mats.skin, 0, 0.10, 0.01);
   addMesh(headG, new THREE.SphereGeometry(0.028, 8, 8), mats.skin, 0, 0.085, 0.135);
-  // safari hat: brim + crown
   addMesh(headG, new THREE.CylinderGeometry(0.24, 0.25, 0.03, 18), mats.hat, 0, 0.19, 0);
   addMesh(headG, new THREE.SphereGeometry(0.13, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), mats.hat, 0, 0.19, 0);
-  addMesh(headG, new THREE.CylinderGeometry(0.135, 0.135, 0.03, 14), mats.strap, 0, 0.2, 0);
+  addMesh(headG, new THREE.CylinderGeometry(0.135, 0.135, 0.03, 14), mats.strap, 0, 0.20, 0);
 
-  // ----- arms (pivot at shoulder) -----
+  // ----- arms -----
   const buildArm = (side) => {
     const g = new THREE.Group();
     g.position.set(0.28 * side, 0.48, 0);
     hips.add(g);
-    // sleeve (upper)
     addMesh(g, new THREE.CapsuleGeometry(0.065, 0.22, 4, 8), mats.shirt, 0, -0.15, 0);
-    // forearm skin
-    addMesh(g, new THREE.CapsuleGeometry(0.052, 0.2, 4, 8), mats.skin, 0, -0.42, 0);
-    // hand
+    addMesh(g, new THREE.CapsuleGeometry(0.052, 0.20, 4, 8), mats.skin, 0, -0.42, 0);
     addMesh(g, new THREE.SphereGeometry(0.06, 10, 8), mats.skin, 0, -0.58, 0);
-    // machete sheath on right hip side only
     if (side > 0) {
       const sheath = addMesh(g, new THREE.BoxGeometry(0.05, 0.42, 0.07), mats.strap, 0.02, -0.35, -0.12);
       sheath.rotation.x = 0.15;
@@ -86,56 +79,98 @@ export function placeCharacter(scene) {
   };
   const armL = buildArm(-1);
   const armR = buildArm(1);
-  armL.rotation.z = 0.12;
-  armR.rotation.z = -0.12;
 
-  // ----- legs (pivot at hip) -----
+  // ----- legs -----
   const buildLeg = (side) => {
     const g = new THREE.Group();
     g.position.set(0.11 * side, -0.04, 0);
     hips.add(g);
-    // thigh + shin (pants)
-    addMesh(g, new THREE.CapsuleGeometry(0.085, 0.5, 4, 10), mats.pants, 0, -0.32, 0);
-    // boot (sole at y=0: hips 0.92 - 0.04 - 0.82 - 0.06 = 0)
-    addMesh(g, new THREE.BoxGeometry(0.13, 0.12, 0.24), mats.boots, 0, -0.82, 0.04);
+    addMesh(g, new THREE.CapsuleGeometry(0.085, 0.50, 4, 10), mats.pants, 0, -0.32, 0);
+    // boot sole sits at group y=0 when hips=0.92: leg pivot -0.04, boot center -0.82 => sole 0
+    addMesh(g, new THREE.BoxGeometry(0.13, 0.12, 0.24), mats.boots, 0, -0.84, 0.04);
     return g;
   };
   const legL = buildLeg(-1);
   const legR = buildLeg(1);
 
-  // ----- placement: trailhead, offset to the side, facing the player -----
-  // t=0.02 is spawn. Stand ~4m ahead and ~2.2m to the right of center
-  // so the camera sees the guide immediately without blocking the path.
-  const tGuide = 0.028;
-  const p = TRAIL.getPointAt(tGuide);
-  const tangent = TRAIL.getTangentAt(tGuide);
-  const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-  const px = p.x + normal.x * 2.2;
-  const pz = p.z + normal.z * 2.2;
-  const py = terrainHeight(px, pz);
-  group.position.set(px, py, pz);
-  // face back toward the trail start (toward incoming player).
-  // Object3D.lookAt points the object's +Z at the target, and the
-  // character's front (face, shirt placket, shoulder straps) is +Z.
-  // Verified numerically: facing dot with direction-to-player ≈ +1.
-  const lookBack = TRAIL.getPointAt(0.015);
-  group.lookAt(lookBack.x, py, lookBack.z);
+  // ----- spawn pose (trailhead) — will be overridden immediately by main.js -----
+  // Keep for headless/harness sanity if main.js doesn't move it yet.
+  // Initial facing = trail forward at t=0.02.
+  group.position.set(0, 0, 0);
+  group.rotation.y = 0;
 
   scene.add(group);
 
-  // ----- idle animation: breathing, weight shift, arm sway, head scan -----
-  const update = (time) => {
-    const b = Math.sin(time * 1.6) * 0.008;          // breathing
-    torso.position.y = 0.28 + b;
-    hips.position.y = 0.92 + b * 0.5 + Math.sin(time * 0.5) * 0.006; // weight shift
-    hips.rotation.z = Math.sin(time * 0.5) * 0.02;
-    armL.rotation.x = Math.sin(time * 1.6) * 0.06;
-    armR.rotation.x = -Math.sin(time * 1.6) * 0.06;
-    headG.rotation.y = Math.sin(time * 0.35) * 0.4;  // slow look around
-    headG.rotation.x = Math.sin(time * 0.7) * 0.05;
-    legL.rotation.x = 0;
-    legR.rotation.x = 0;
+  // Animation state
+  let stepPhase = 0;
+  let hipsYaw = group.rotation.y;
+  let torsoTilt = 0;
+
+  /**
+   * Update walk/idle animation.
+   * @param {number} time - elapsed seconds
+   * @param {number} dt - delta seconds
+   * @param {{speed:number,isMoving:boolean,isRunning:boolean,trailVel:number,strafeVel:number,yaw:number}} state
+   */
+  const update = (time, dt, state = {}) => {
+    const { speed = 0, isMoving = false, isRunning = false, yaw = group.rotation.y } = state;
+    const moving = isMoving || speed > 0.08;
+
+    // smooth yaw toward target (handle wraparound)
+    let dy = yaw - hipsYaw;
+    dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    hipsYaw += dy * Math.min(1, dt * 6.0);
+    group.rotation.y = hipsYaw;
+
+    if (moving) {
+      const hz = isRunning ? 2.45 : 1.65;
+      stepPhase += dt * hz * Math.PI * 2;
+      if (stepPhase > Math.PI * 2) stepPhase -= Math.PI * 2;
+
+      const swing = isRunning ? 0.55 : 0.38;
+      const armSwing = isRunning ? 0.55 : 0.42;
+      // legs counter-oscillate, arms opposite to legs
+      legL.rotation.x = Math.sin(stepPhase) * swing;
+      legR.rotation.x = Math.sin(stepPhase + Math.PI) * swing;
+      // slight knee bend at mid-swing -> add thigh lift
+      legL.rotation.x += Math.max(0, -Math.sin(stepPhase)) * 0.18;
+      legR.rotation.x += Math.max(0, -Math.sin(stepPhase + Math.PI)) * 0.18;
+      armL.rotation.x = Math.sin(stepPhase + Math.PI) * armSwing;
+      armR.rotation.x = Math.sin(stepPhase) * armSwing;
+      // subtle torso lean into motion + sway
+      torsoTilt = THREE.MathUtils.damp(torsoTilt, Math.sin(stepPhase) * 0.03 + (isRunning ? 0.04 : 0.0), 8, dt);
+      hips.rotation.z = Math.sin(stepPhase) * 0.04;
+      hips.rotation.x = torsoTilt;
+      hips.position.y = 0.92 + Math.abs(Math.sin(stepPhase * 2)) * (isRunning ? 0.025 : 0.015);
+      headG.rotation.y = Math.sin(stepPhase * 0.5) * 0.12;
+      headG.rotation.x = 0;
+    } else {
+      // idle: breathing + slow weight shift + head scan
+      const b = Math.sin(time * 1.6) * 0.008;
+      torso.position.y = 0.28 + b;
+      hips.position.y = 0.92 + b * 0.5 + Math.sin(time * 0.5) * 0.006;
+      hips.rotation.z = Math.sin(time * 0.5) * 0.018;
+      hips.rotation.x = THREE.MathUtils.damp(hips.rotation.x, 0, 4, dt);
+      armL.rotation.x = THREE.MathUtils.damp(armL.rotation.x, 0.05, 6, dt);
+      armR.rotation.x = THREE.MathUtils.damp(armR.rotation.x, -0.05, 6, dt);
+      legL.rotation.x = THREE.MathUtils.damp(legL.rotation.x, 0, 8, dt);
+      legR.rotation.x = THREE.MathUtils.damp(legR.rotation.x, 0, 8, dt);
+      headG.rotation.y = Math.sin(time * 0.35) * 0.35;
+      headG.rotation.x = Math.sin(time * 0.7) * 0.04;
+    }
   };
 
-  return { group, update };
+  // Legacy idle-only signature: update(time, dt) — normalize
+  const legacyUpdate = (time, dt, maybeState) => {
+    if (maybeState && typeof maybeState === 'object') return update(time, dt, maybeState);
+    return update(time, dt, {});
+  };
+
+  // Allow external placement (used by world.js initial and main.js each frame)
+  const setPosition = (x, y, z, yaw) => {
+    group.position.set(x, y, z);
+    if (yaw !== undefined) { hipsYaw = group.rotation.y = yaw; }
+  };
+
+  return { group, hips, update: legacyUpdate, _rawUpdate: update, setPosition };
 }

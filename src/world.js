@@ -611,9 +611,21 @@ export async function buildScene() {
   const { placeWater } = await import('./water.js');
   const water = placeWater(scene);
 
-  // ----- Guide character (procedural explorer at the trailhead) -----
+  // ----- Walkable guide character at the trailhead -----
+  // Procedural Three.js primitives; Blender MCP (blender 4.0.2 + blender-mcp 1.0.1)
+  // is installed and can generate a GLTF alternative, but primitives are used
+  // to keep zero-external-assets and headless-safe. See src/character.js.
   const { placeCharacter } = await import('./character.js');
   const character = placeCharacter(scene);
+  // place at trailhead spawn; main.js will take over positioning each frame
+  {
+    const p = TRAIL.getPointAt(0.02);
+    const y = terrainHeight(p.x, p.z);
+    // character faces along trail forward (toward t=0.99 side) so motion is natural
+    const f = TRAIL.getTangentAt(0.02);
+    const yaw = Math.atan2(f.x, f.z);
+    character.setPosition(p.x, y, p.z, yaw);
+  }
 
   // ----- System 7: post-processing (bloom, color grade, vignette) -----
   const { JunglePostprocess } = await import('./postprocess.js');
