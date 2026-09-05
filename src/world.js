@@ -611,9 +611,13 @@ export async function buildScene() {
   const { placeWater } = await import('./water.js');
   const water = placeWater(scene);
 
+  // ----- Guide character (procedural explorer at the trailhead) -----
+  const { placeCharacter } = await import('./character.js');
+  const character = placeCharacter(scene);
+
   // ----- System 7: post-processing (bloom, color grade, vignette) -----
   const { JunglePostprocess } = await import('./postprocess.js');
   const postprocess = new JunglePostprocess(renderer, scene, camera);
 
-  return { scene, camera, renderer, ground, lighting, water, postprocess };
+  return { scene, camera, renderer, ground, lighting, water, character, postprocess };
 }

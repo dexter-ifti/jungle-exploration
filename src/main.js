@@ -2,7 +2,7 @@
 import { buildScene, TRAIL, terrainHeight } from './world.js';
 import * as THREE from 'three';
 
-const { scene, camera, renderer, lighting, water, postprocess } = await buildScene();
+const { scene, camera, renderer, lighting, water, character, postprocess } = await buildScene();
 window.__scene = scene; // debug hook for render harness
 window.__camera = camera;
 window.__renderer = renderer;
@@ -265,6 +265,8 @@ function animate() {
   lighting.update(clock.elapsedTime, dt);
   // System 5: animate water (splash particles, pool texture)
   water.update(clock.elapsedTime, dt);
+  // Guide character idle animation
+  if (character) character.update(clock.elapsedTime, dt);
   // System 6: update sound (spatial volumes based on player t)
   if (sound) sound.update(t, dt);
 
