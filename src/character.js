@@ -252,17 +252,46 @@ export function placeCharacter(scene) {
         const gltf=await new Promise((res,rej)=> new GLTFLoader().load(url,res,undefined,rej));
         const m=gltf.scene;
         m.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; }});
-        // Fit to ~1.78m adult. Covers both UE-cm exports (h≈178) and metre
-        // exports through tools/fbx2glb.py (h≈1.78, already fine).
-        const box=new THREE.Box3().setFromObject(m);
-        const h=(box.max.y-box.min.y)||0;
-        if(h>0.001 && (h>2.5 || h<1.2)){ const s=1.78/(h||1.78); m.scale.setScalar(m.scale.x*s); }
-        // Ground the model: hold its lowest point at group's y=0 (feet on terrain).
-        const box2=new THREE.Box3().setFromObject(m);
-        const ymin=box2.min.y;
+        scene.add(m); m.updateWorldMatrix(true,true);
+        // True fitted size: Box3.setFromObject is WRONG for skinned meshes
+        // (it ignores bone transforms), which mis-scaled the model 3.5x.
+        // Sample real skinned vertices through the skeleton instead.
+        const skinnedAABB=(root)=>{
+          const min=[Infinity,Infinity,Infinity], max=[-Infinity,-Infinity,-Infinity];
+          const v=new THREE.Vector3(), t=new THREE.Vector3(), p=new THREE.Vector3(), m4=new THREE.Matrix4();
+          root.updateWorldMatrix(true,true);
+          root.traverse(o=>{
+            if(!o.isSkinnedMesh || !o.geometry.attributes.skinIndex) return;
+            const pos=o.geometry.attributes.position;
+            const step=Math.max(1,Math.floor(pos.count/4000));
+            o.skeleton.update();
+            for(let i=0;i<pos.count;i+=step){
+              v.fromBufferAttribute(pos,i);
+              let x=0,y=0,z=0;
+              for(let k=0;k<4;k++){
+                const w=o.geometry.attributes.skinWeight['get'+['XYZW'[k]]]?.(i)||0;
+                if(!w) continue;
+                m4.fromArray(o.skeleton.boneMatrices,o.geometry.attributes.skinIndex['get'+['XYZW'[k]]]?.(i)*16);
+                t.copy(v).applyMatrix4(o.bindMatrix).applyMatrix4(m4).applyMatrix4(o.bindMatrixInverse);
+                x+=t.x*w; y+=t.y*w; z+=t.z*w;
+              }
+              p.set(x,y,z).applyMatrix4(o.matrixWorld);
+              const c=[p.x,p.y,p.z];
+              for(let a=0;a<3;a++){ if(c[a]<min[a])min[a]=c[a]; if(c[a]>max[a])max[a]=c[a]; }
+            }
+          });
+          return (min[0]===Infinity)?null:{min,max,h:max[1]-min[1]};
+        };
+        // Fit to ~1.78m adult (covers UE-cm and metre exports alike).
+        let bb=skinnedAABB(m);
+        if(bb && bb.h>0.001 && (bb.h>2.5 || bb.h<1.2)){ const s=1.78/(bb.h||1.78); m.scale.setScalar(s); }
+        // Ground the model: hold its lowest skinned point at group's y=0 (feet on terrain).
+        bb=skinnedAABB(m);
+        const ymin=(bb && Number.isFinite(bb.min[1]))?bb.min[1]:0;
         const holder=new THREE.Group(); holder.name='SurvivalCharacterHolder';
         holder.position.y=(Number.isFinite(ymin)&&Math.abs(ymin)>0.001)?-ymin:0;
         holder.add(m);
+        scene.remove(m);
         // Hide procedural, show GLB model at the same world position.
         group.visible=false;
         const fabGroup=new THREE.Group(); fabGroup.name='FabQuantumCharacter';

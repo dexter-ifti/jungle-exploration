@@ -6,6 +6,7 @@ const { scene, camera, renderer, lighting, water, character, postprocess } = awa
 window.__scene = scene; // debug hook for render harness
 window.__camera = camera;
 window.__renderer = renderer;
+window.__postprocess = postprocess; // debug hook: composer render for tests
 window.__terrainHeight = terrainHeight;
 window.__TRAIL = TRAIL;
 // expose THREE for debug
