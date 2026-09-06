@@ -172,6 +172,71 @@ export function placeCharacter(scene) {
 
   group.position.set(0,0,0); group.rotation.y=0; scene.add(group);
 
+  // ---------------------------------------------------------------------
+  // Rig-driven gait hook — set by the GLB loader below (null while the
+  // procedural mesh is active, so the fallback is unaffected).
+  // Bone axes were measured empirically via tools/rig-probe.mjs:
+  //   thigh/calf/upperarm/lowerarm swing = local Z
+  //   knee & elbow flexion (heel/forearm to body) = -Z
+  //   shoulder forward swing = -Z
+  // ---------------------------------------------------------------------
+  let rigAnimator = null;
+
+  const makeRigUpdate = (rig)=>{
+    const R=rig.restQ, B=rig.bones, Q=new THREE.Quaternion(), E=new THREE.Euler();
+    const set=(n,ax,v)=>{ const b=B[n]; if(!b) return; E.set(ax==='x'?v:0, ax==='y'?v:0, ax==='z'?v:0); Q.setFromEuler(E); b.quaternion.copy(R[n]).multiply(Q); };
+    const pelvis=B.pelvis;
+    return (time,dt,ph,ctx)=>{
+      const { isRun=false, moving=false }=ctx;
+      const PI=Math.PI;
+      const pt=ph%(PI*2);
+      let bob, pYaw, lean;
+      if(moving){
+        bob=isRun?(Math.max(0,Math.sin(pt*2))*0.022+Math.abs(Math.sin(pt*2))*0.010):(Math.abs(Math.sin(pt*2))*0.014);
+        pYaw=Math.sin(pt)*(isRun?0.105:0.065);
+        lean=isRun?0.09:0.028;
+      } else {
+        bob=Math.sin(time*1.55)*0.004;
+        pYaw=0;
+        lean=0.020+Math.sin(time*1.55)*0.010;
+      }
+      // pelvis bob + torso counter-rotation + forward lean
+      if(pelvis) pelvis.position.y=rig.restPelvisY+bob;
+      set('pelvis','y',pYaw);
+      set('spine_01','y',-pYaw*0.55);
+      set('spine_03','z',moving?Math.sin(pt)*0.03:0);
+      set('spine_05','x',lean);
+      set('neck_01','y',moving?-Math.sin(pt)*0.05:0);
+      set('head','y',moving?-Math.sin(pt)*0.03:0);
+
+      if(moving){
+        const swing=isRun?0.55:0.38;
+        const knee=isRun?1.10:0.85;
+        set('thigh_l','z',Math.sin(pt)*swing);
+        set('thigh_r','z',Math.sin(pt+PI)*swing);
+        const lKnee=Math.max(0,Math.sin(pt-0.2))*knee+Math.max(0,Math.sin(pt))*0.12;
+        const rKnee=Math.max(0,Math.sin(pt+PI-0.2))*knee+Math.max(0,Math.sin(pt+PI))*0.12;
+        set('calf_l','z',-lKnee);
+        set('calf_r','z',-rKnee);
+        // foot: slight toe-off / landing flatten
+        set('foot_l','z',Math.sin(pt+0.35)*0.10+(isRun?0.06:0));
+        set('foot_r','z',Math.sin(pt+PI+0.35)*0.10+(isRun?0.06:0));
+        const arm=isRun?0.55:0.36;
+        set('upperarm_l','z',-Math.sin(pt+PI)*arm);
+        set('upperarm_r','z',-Math.sin(pt)*arm);
+        set('lowerarm_l','z',-0.55-Math.sin(pt+PI)*0.08);
+        set('lowerarm_r','z',-0.55-Math.sin(pt)*0.08);
+      } else {
+        set('thigh_l','z',-0.015); set('thigh_r','z',0.012);
+        set('calf_l','z',-0.04);  set('calf_r','z',-0.04);
+        set('foot_l','z',0);       set('foot_r','z',0);
+        set('upperarm_l','z',-0.10); set('upperarm_r','z',0.06);
+        set('lowerarm_l','z',-0.45); set('lowerarm_r','z',-0.45);
+      }
+      rig.skin.update();
+    };
+  };
+
   // Survival/Fab character GLB loader — replaces the procedural tactical
   // soldier when the converted FBX is present (`public/models/survival_character.glb`,
   // produced by tools/fbx2glb.py). Runs once at startup, swaps the procedural
@@ -222,6 +287,21 @@ export function placeCharacter(scene) {
           requestAnimationFrame(sync);
         }; sync();
         scene.add(fabGroup);
+        // Capture the rig for the walk cycle (we drive bones in update()).
+        (()=>{
+          let sm=null; m.traverse(o=>{ if(o.isSkinnedMesh&&!sm) sm=o; });
+          if(!sm) return;
+          const want=['pelvis','spine_01','spine_03','spine_05','neck_01','head',
+                      'thigh_l','thigh_r','calf_l','calf_r','foot_l','foot_r',
+                      'upperarm_l','upperarm_r','lowerarm_l','lowerarm_r'];
+          const bones={}, restQ={};
+          for(const b of sm.skeleton.bones){
+            if(want.includes(b.name)){ bones[b.name]=b; restQ[b.name]=b.quaternion.clone(); }
+          }
+          rigAnimator=makeRigUpdate({ skin:sm.skeleton, bones, restQ,
+            restPelvisY:(bones.pelvis?bones.pelvis.position.y:0) });
+          console.log('[fab] rig set for gait:', Object.keys(bones).join(','));
+        })();
         console.log('[fab] loaded',url);
         break;
       }catch(e){ console.warn('[fab] GLB skipped:',url,e?.message); }
@@ -241,11 +321,11 @@ export function placeCharacter(scene) {
   const update=(time,dt,state={})=>{
     const { speed=0,isMoving=false,isRunning=false,yaw=group.rotation.y,strafeVel=0,trailVel=0 }=state;
     const moving=isMoving||speed>0.11||Math.abs(strafeVel)>0.18||Math.abs(trailVel)>0.00022;
+    const isRun=!!isRunning && speed>1.9; const hz=isRun?2.40:1.60;
     let dy=yaw-hipsYaw; dy=Math.atan2(Math.sin(dy),Math.cos(dy)); hipsYaw+=dy*Math.min(1,dt*7.0); group.rotation.y=hipsYaw;
     const strafeOnly=Math.abs(strafeVel)>0.35 && Math.abs(trailVel)*320<0.6;
     const sAbs=Math.abs(strafeVel);
     if(moving){
-      const isRun=!!isRunning && speed>1.9; const hz=isRun?2.40:1.60;
       phase+=dt*hz*Math.PI*2; if(phase>Math.PI*2) phase-=Math.PI*2;
       if(strafeOnly){
         const s=Math.sign(strafeVel), abduct=0.22+sAbs*0.03;
@@ -278,6 +358,8 @@ export function placeCharacter(scene) {
       legR.thigh.rotation.x=THREE.MathUtils.damp(legR.thigh.rotation.x,0.015,7,dt);
       armL.upper.rotation.x=THREE.MathUtils.damp(armL.upper.rotation.x,0.10,5,dt);
     }
+    // drive the GLB rig with the same gait phase (no-op for procedural fallback)
+    if(rigAnimator) rigAnimator(time,dt,phase,{ moving, isRun, strafeOnly, strafeVel });
   };
   const legacyUpdate=(time,dt,maybeState)=>{ if(maybeState&&typeof maybeState==='object') return update(time,dt,maybeState); return update(time,dt,{}); };
   const setPosition=(x,y,z,yaw)=>{ group.position.set(x,y,z); if(yaw!==undefined){ const dy=yaw-hipsYaw; const nd=Math.atan2(Math.sin(dy),Math.cos(dy)); hipsYaw+=nd; group.rotation.y=hipsYaw; } };

@@ -1,6 +1,8 @@
 # Blender headless FBX -> GLB converter (UE cm scale -> metres, height ~1.78m).
+# Optionally decimates meshes to keep the web asset small.
 # Usage:
-#   blender --background --python tools/fbx2glb.py -- public/models/survival_character.fbx public/models/survival_character.glb
+#   blender --background --python tools/fbx2glb.py -- public/models/survival_character.fbx public/models/survival_character.glb 0.3 2000
+#   (ratio 0.3 = keep 30% of triangles on meshes >2000 verts; omit ratio for full-res)
 # Note: if your distro Blender is broken (missing libMaterialX v1.39.46 symbols),
 # bootstrap the runtime first, e.g.:
 #   LD_PRELOAD=/tmp/libmx_shim.so blender --background --python tools/fbx2glb.py -- ...
@@ -10,6 +12,8 @@ argv = sys.argv
 argv = argv[argv.index("--") + 1:] if "--" in argv else []
 src = pathlib.Path(argv[0]) if len(argv) > 0 else pathlib.Path("public/models/survival_character.fbx")
 dst = pathlib.Path(argv[1]) if len(argv) > 1 else pathlib.Path("public/models/survival_character.glb")
+ratio = float(argv[2]) if len(argv) > 2 else 0.0      # decimation ratio (0 = no decimate)
+keep_verts = int(argv[3]) if len(argv) > 3 else 2000  # meshes under this stay untouched
 dst.parent.mkdir(parents=True, exist_ok=True)
 
 # Make sure the bundled FBX importer / glTF exporter addons are registered.
@@ -88,6 +92,21 @@ if box:
     print(f"[fbx2glb] scaled {s:.4f}, height now {maxs[2]-mins[2]:.3f} m")
 else:
     print("[fbx2glb] WARNING: no mesh objects found; exporting as-is")
+
+# Optional decimation (maintains skinning weights; small detailed meshes kept).
+if ratio > 0:
+    before = 0
+    for o in bpy.data.objects:
+        if o.type == "MESH": before += len(o.data.vertices)
+    for o in list(bpy.data.objects):
+        if o.type == "MESH" and len(o.data.vertices) > keep_verts:
+            bpy.context.view_layer.objects.active = o
+            bpy.ops.object.modifier_add(type="DECIMATE")
+            o.modifiers[-1].decimate_type = "COLLAPSE"
+            o.modifiers[-1].ratio = ratio
+    bpy.context.view_layer.update()
+    after = sum(len(o.data.vertices) for o in bpy.data.objects if o.type == "MESH")
+    print(f"[fbx2glb] decimate {ratio}: {before} -> {after} verts")
 
 print("[fbx2glb] exporting", dst)
 bpy.ops.export_scene.gltf(filepath=str(dst), export_format="GLB", export_apply=True)

@@ -2,15 +2,17 @@
 
 **Link**: https://www.fab.com/listings/8e200050-3158-4762-b297-f785b5b1533d
 
-> **UPDATE**: the full character IS integrated — `public/models/survival_character.fbx`
+> **UPDATE**: the full character IS integrated AND walks — `public/models/survival_character.fbx`
 > (9.4 MB, Modular-Survival bundle: rigged head/neck/spine/limbs/hands/fingers plus
 > Jacket, Jeans, Hair, Shoes, Gloves, Backpack, Eye/Mouth/Eyelash/Brows) converted
 > headless via Blender 5.1 (`tools/fbx2glb.py`) to `public/models/survival_character.glb`
-> (13.6 MB, 172 nodes / 11 meshes / 12 materials, normalised to ~1.78 m with feet on
-> ground). `src/character.js` auto-detects the GLB, grounds it to `terrainHeight` and
-> — since the character FBX ships no weapon mesh — re-attaches the `sm_rifle.glb` bonus
-> weapon on the back. The procedural tactical soldier remains only as the fallback
-> when the GLB is missing.
+> (**1.6 MB — decimated 84.6k → 32.9k verts**, 172 nodes / 11 meshes / 12 materials,
+> normalised to ~1.78 m with feet on ground). `src/character.js` auto-detects the GLB,
+> grounds it to `terrainHeight`, and **drives the rig's bones with the same procedural
+> gait** (thigh/calf stride, arm counter-swing, pelvis bob, spine/head stabilisation —
+> `tools/verify-walk.mjs`, `tools/verify-stride.mjs`). Since the character FBX ships no
+> weapon mesh, the `sm_rifle.glb` bonus weapon is re-attached on the back. The procedural
+> tactical soldier remains only as the fallback when the GLB is missing.
 
 This project now uses a **tactical modular soldier** inspired by the Fab listing instead of the previous jungle explorer.
 
@@ -35,11 +37,12 @@ Because Fab requires authentication, the repo cannot auto-download it via MCP al
 
 1. Open the link above while logged into Epic/Fab, click **Free → Add to My Library → Download** (choose FBX).
 2. Save as `public/models/survival_character.fbx` (9.4 MB — already in this repo).
-3. Convert FBX → GLB (UE cm → m, skeleton preserved, ~1.78 m, feet at y=0):
+3. Convert FBX → GLB (UE cm → m, skeleton preserved, ~1.78 m, feet at y=0, **decimates to ~1.6 MB**):
    ```sh
-   blender --background --python tools/fbx2glb.py -- public/models/survival_character.fbx public/models/survival_character.glb
+   blender --background --python tools/fbx2glb.py -- public/models/survival_character.fbx public/models/survival_character.glb 0.3 2000
+   # ratio 0.3 = keep 30% of triangles on meshes >2000 verts; omit for full-res output
    ```
-4. `npm run dev` — the character will now be the Fab mesh (check console `[fab] loaded /models/survival_character.glb`). Walk/strafe/joystick still work; the mesh is slaved to `group.position/rotation` from `main.js`.
+4. `npm run dev` — the character will now be the Fab mesh and **walks** (legs/arms animate via rig bones; check console `[fab] loaded …` + `[fab] rig set for gait`). Walk/strafe/joystick still work; the mesh is slaved to `group.position/rotation` from `main.js`.
 
 If the file is missing, the procedural tactical fallback is shown and no error is thrown.
 
@@ -47,10 +50,14 @@ If the file is missing, the procedural tactical fallback is shown and no error i
 
 ```sh
 npm run build
-# three.module 658kB, character chunk ~4-5kB, FBX/GLB not bundled (lazy)
+# three.module 658kB, character chunk ~9-10kB, FBX/GLB not bundled (lazy)
+node tools/verify-survival.mjs   # 178 cm, grounded, procedural hidden
+node tools/verify-walk.mjs       # rig bones animate while W held, still idle
+node tools/verify-stride.mjs     # stride ~0.33 m, step lift ~0.11 m, arm swing ~0.29 m
+node tools/backshot.mjs          # rifle visible on the back
 ```
 
-Headless harness still finds `ExplorerGuide` (now tactical) and walk/strafe remain `groundOff 0` via `terrainHeight` (see `src/main.js`).
+Headless harness still finds `ExplorerGuide` (now hidden behind the GLB) and walk/strafe remain `groundOff 0` via `terrainHeight` (see `src/main.js`).
 
 ## MCPs installed
 
