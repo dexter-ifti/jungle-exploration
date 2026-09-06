@@ -9,8 +9,8 @@
 [![License](https://img.shields.io/badge/License-ISC-lightgrey)](./package.json)
 
 <p align="center">
-  <img src="renders_final/frame_0_0.02.png" width="32%" alt="Trailhead" />
-  <img src="renders_final/frame_3_0.55.png" width="32%" alt="Ruins" />
+  <img src="renders/frame_0_0.00.png" width="32%" alt="Trailhead" />
+  <img src="renders/frame_5_0.85.png" width="32%" alt="Ruins" />
   <img src="renders_final/frame_6_0.99.png" width="32%" alt="Waterfall" />
 </p>
 
