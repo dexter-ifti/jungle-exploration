@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "test": "echo \"Error: no test specified\" && exit 1",
     "blender:mcp": "node ./node_modules/blender-mcp/dist/index.js",
-    "blender:check": "blender --version && echo \"blender-mcp $(node -p \"require('./node_modules/blender-mcp/package.json').version\") ready\""
+    "blender:check": "blender --version && echo \"blender-mcp $(node -p \"require('./node_modules/blender-mcp/package.json').version\") ready\"",
+    "spline:mcp": "node ./node_modules/spline-mcp-server/src/index.js",
+    "spline:check": "node -e \"import('@splinetool/runtime').then(m=>console.log('spline runtime', 'ok')).catch(()=>console.log('spline runtime missing'))\" && echo \"spline-mcp-server $(node -p \"require('./node_modules/spline-mcp-server/package.json').version\") installed (archived, code-gen only)\""
   },
   "repository": {
     "type": "git",
@@ -24,11 +26,14 @@
   },
   "homepage": "https://github.com/dexter-ifti/jungle-exploration#readme",
   "dependencies": {
+    "@splinetool/runtime": "^2.0.37",
+    "@splinetool/viewer": "^2.0.37",
     "three": "^0.160.0",
     "vite": "^8.2.2"
   },
   "devDependencies": {
     "blender-mcp": "^1.0.1",
-    "playwright": "^1.62.1"
+    "playwright": "^1.62.1",
+    "spline-mcp-server": "github:aydinfer/spline-mcp-server"
   }
 }

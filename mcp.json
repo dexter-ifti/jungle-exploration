@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "blender": {
+      "command": "npx",
+      "args": ["blender-mcp"],
+      "env": {
+        "BLENDER_EXECUTABLE": "blender",
+        "BLENDER_MCP_DIR": "~/Desktop/BLENDER-MCP"
+      }
+    },
+    "spline": {
+      "command": "node",
+      "args": ["./node_modules/spline-mcp-server/src/index.js"],
+      "env": {
+        "SPLINE_API_URL": "https://api.spline.design"
+      }
+    }
+  }
+}
