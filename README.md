@@ -11,7 +11,7 @@
 <p align="center">
   <img src="renders/frame_0_0.00.png" width="32%" alt="Trailhead" />
   <img src="renders/frame_5_0.85.png" width="32%" alt="Ruins" />
-  <img src="renders_final/frame_6_0.99.png" width="32%" alt="Waterfall" />
+  <img src="renders/frame_6_0.99.png" width="32%" alt="Waterfall" />
 </p>
 
 ---
