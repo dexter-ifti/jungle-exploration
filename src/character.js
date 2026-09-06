@@ -87,6 +87,26 @@ export function placeCharacter(scene) {
   // collar
   addMesh(chest, new THREE.CylinderGeometry(0.09,0.11,0.07,12), mats.shirt, 0,0.21,0).scale.set(1,1,0.8);
 
+  // Fab bonus weapon (public/models/sm_rifle.fbx, 7849 verts, 1 gray 'Rifle'
+  // material — Rifle_BaseColor.png was NOT shipped with the FBX) slung
+  // diagonally on the back, visible from the third-person chase cam.
+  // Converted headless via Blender: sm_rifle.fbx → sm_rifle.glb.
+  // Silent if missing — the tactical fallback simply has no rifle.
+  (async ()=>{
+    try{
+      const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+      const gltf = await new Promise((res,rej)=> new GLTFLoader().load('/models/sm_rifle.glb',res,undefined,rej));
+      const rifle = gltf.scene;
+      rifle.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+      const sling = new THREE.Group();
+      sling.position.set(-0.02, 0.15, -0.28); // mid-back, clear of vest and pack
+      sling.rotation.set(0.15, 0, -0.55);     // diagonal: barrel up over right shoulder
+      sling.add(rifle);
+      chest.add(sling);
+      console.log('[fab] rifle attached');
+    }catch(e){ console.warn('[fab] rifle missing:', e?.message); }
+  })();
+
   // tactical pants with knee pads
   addMesh(hips, new THREE.CylinderGeometry(0.235,0.24,0.30,14), mats.pants, 0,-0.18,0).scale.set(1,1,0.9);
   addMesh(hips, new THREE.BoxGeometry(0.09,0.06,0.04), mats.vest, -0.18,-0.16,0.16);

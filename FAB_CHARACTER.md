@@ -2,6 +2,13 @@
 
 **Link**: https://www.fab.com/listings/8e200050-3158-4762-b297-f785b5b1533d
 
+> **UPDATE**: a real Fab asset IS integrated — `public/models/sm_rifle.fbx`
+> (Bonus Weapon Static Mesh, 7849 verts, gray 'Rifle' material) converted
+> headless via Blender to `public/models/sm_rifle.glb` (688KB) and slung
+> diagonally on the soldier's back (`src/character.js`, `[fab] rifle attached`,
+> 62 meshes). The human body itself remains procedural (below) — the full
+> character FBX was never uploaded, only the rifle.
+
 This project now uses a **tactical modular soldier** inspired by the Fab listing instead of the previous jungle explorer.
 
 ## What the listing is
