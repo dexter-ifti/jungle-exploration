@@ -8,10 +8,10 @@
 //
 // 1) Download the FREE sample from the Fab link above (Add to My Library → Download)
 //    Included formats: Unreal Engine / Maya / FBX
-// 2) Place the FBX as `public/models/quantum-character.fbx` (or GLB after Blender)
-// 3) Optionally convert via Blender MCP: `blender --background --python tools/fab_convert.py`
-//    (converts FBX → GLB with UE5 skeleton intact, preserves MetaHuman compat)
-// 4) This module will auto-detect `/models/quantum-character.glb` and load it
+// 2) Place the FBX as `public/models/survival_character.fbx` (or GLB after Blender)
+// 3) Convert via Blender: `blender --background --python tools/fbx2glb.py -- public/models/survival_character.fbx public/models/survival_character.glb`
+//    (headless FBX→GLB, UE cm→m, height normalised to ~1.78m, rig preserved)
+// 4) This module auto-detects `/models/survival_character.glb` and loads it
 //    via GLTFLoader; otherwise it falls back to this procedural tactical mesh.
 //
 // Hierarchy & gait identical to prior explorer (1.78m, hips 0.90, walk 1.6Hz, run 2.4Hz,
@@ -172,29 +172,49 @@ export function placeCharacter(scene) {
 
   group.position.set(0,0,0); group.rotation.y=0; scene.add(group);
 
-  // optional Fab GLB loader (if user downloaded Fab asset)
-  // This runs once at startup and swaps the procedural mesh if GLB exists.
-  // No error if missing — keeps procedural.
+  // Survival/Fab character GLB loader — replaces the procedural tactical
+  // soldier when the converted FBX is present (`public/models/survival_character.glb`,
+  // produced by tools/fbx2glb.py). Runs once at startup, swaps the procedural
+  // mesh for the GLB, then slaves it to group position/yaw (locomotion is still
+  // driven by world.js/main.js). No error if missing — keeps the fallback.
   (async ()=>{
-    const urls=['/models/quantum-character.glb','/models/quantum-character.gltf','/public/models/quantum-character.glb'];
+    const urls=['/models/survival_character.glb','/models/quantum-character.glb','/models/quantum-character.gltf'];
     for(const url of urls){
       try{
         const r=await fetch(url,{method:'HEAD'});
         if(!r.ok) continue;
         const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-        const loader=new GLTFLoader();
-        const gltf=await new Promise((res,rej)=> loader.load(url,res,undefined,rej));
+        const gltf=await new Promise((res,rej)=> new GLTFLoader().load(url,res,undefined,rej));
         const m=gltf.scene;
         m.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; }});
-        // scale to ~1.78m (Fab UE mannequin is ~180cm, Three units are metres)
-        m.scale.set(0.01,0.01,0.01); // FBX/UE units cm → m (if needed, auto-adjusted below)
-        // try to fit: normalize height
-        const box=new THREE.Box3().setFromObject(m); const h=box.max.y-box.min.y;
-        if(h>2.5 || h<1.2){ const s=1.78/(h||1.78); m.scale.setScalar(m.scale.x*s); }
-        // hide procedural, show Fab mesh at same world position
+        // Fit to ~1.78m adult. Covers both UE-cm exports (h≈178) and metre
+        // exports through tools/fbx2glb.py (h≈1.78, already fine).
+        const box=new THREE.Box3().setFromObject(m);
+        const h=(box.max.y-box.min.y)||0;
+        if(h>0.001 && (h>2.5 || h<1.2)){ const s=1.78/(h||1.78); m.scale.setScalar(m.scale.x*s); }
+        // Ground the model: hold its lowest point at group's y=0 (feet on terrain).
+        const box2=new THREE.Box3().setFromObject(m);
+        const ymin=box2.min.y;
+        const holder=new THREE.Group(); holder.name='SurvivalCharacterHolder';
+        holder.position.y=(Number.isFinite(ymin)&&Math.abs(ymin)>0.001)?-ymin:0;
+        holder.add(m);
+        // Hide procedural, show GLB model at the same world position.
         group.visible=false;
         const fabGroup=new THREE.Group(); fabGroup.name='FabQuantumCharacter';
-        fabGroup.add(m);
+        fabGroup.add(holder);
+        // Re-attach the Fab bonus rifle (sm_rifle.glb) slung diagonally on the
+        // survival character's back — these character FBX meshes carry no weapon.
+        try{
+          const rif=await new Promise((res,rej)=> new GLTFLoader().load('/models/sm_rifle.glb',res,undefined,rej));
+          const rifle=rif.scene;
+          rifle.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; }});
+          const sling=new THREE.Group(); sling.name='RifleSling';
+          sling.position.set(0.0, 1.38, -0.32); // upper back, clear of jacket & backpack
+          sling.rotation.set(0.15, 0, -0.55);   // diagonal: barrel over shoulder
+          sling.add(rifle);
+          fabGroup.add(sling);
+          console.log('[fab] rifle attached (survival character)');
+        }catch(e){ console.warn('[fab] rifle missing:', e?.message); }
         // sync position/yaw from group (group drives locomotion)
         const sync=()=>{
           fabGroup.position.copy(group.position);
@@ -204,7 +224,7 @@ export function placeCharacter(scene) {
         scene.add(fabGroup);
         console.log('[fab] loaded',url);
         break;
-      }catch(e){ /* try next url */ }
+      }catch(e){ console.warn('[fab] GLB skipped:',url,e?.message); }
     }
   })();
 

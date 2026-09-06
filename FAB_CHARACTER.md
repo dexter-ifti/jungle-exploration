@@ -2,12 +2,15 @@
 
 **Link**: https://www.fab.com/listings/8e200050-3158-4762-b297-f785b5b1533d
 
-> **UPDATE**: a real Fab asset IS integrated — `public/models/sm_rifle.fbx`
-> (Bonus Weapon Static Mesh, 7849 verts, gray 'Rifle' material) converted
-> headless via Blender to `public/models/sm_rifle.glb` (688KB) and slung
-> diagonally on the soldier's back (`src/character.js`, `[fab] rifle attached`,
-> 62 meshes). The human body itself remains procedural (below) — the full
-> character FBX was never uploaded, only the rifle.
+> **UPDATE**: the full character IS integrated — `public/models/survival_character.fbx`
+> (9.4 MB, Modular-Survival bundle: rigged head/neck/spine/limbs/hands/fingers plus
+> Jacket, Jeans, Hair, Shoes, Gloves, Backpack, Eye/Mouth/Eyelash/Brows) converted
+> headless via Blender 5.1 (`tools/fbx2glb.py`) to `public/models/survival_character.glb`
+> (13.6 MB, 172 nodes / 11 meshes / 12 materials, normalised to ~1.78 m with feet on
+> ground). `src/character.js` auto-detects the GLB, grounds it to `terrainHeight` and
+> — since the character FBX ships no weapon mesh — re-attaches the `sm_rifle.glb` bonus
+> weapon on the back. The procedural tactical soldier remains only as the fallback
+> when the GLB is missing.
 
 This project now uses a **tactical modular soldier** inspired by the Fab listing instead of the previous jungle explorer.
 
@@ -23,21 +26,20 @@ This project now uses a **tactical modular soldier** inspired by the Fab listing
 The previous `src/character.js` jungle guide (khaki shirt/shorts, safari hat) is **replaced** by a procedural tactical recreation (`src/character.js:1`) that matches the Fab sample's look while keeping **zero external binary assets** so `npm run build` and SwiftShader headless stay reliable.
 
 Changes:
-- `src/character.js` now builds a multicam tactical soldier: plate carrier with mag pouches, multicam shirt/pants (canvas camo), tactical helmet with NVG mount, knee pads, boots. Keeps the same 1.78 m rig, hips 0.90, 69 meshes, walk 1.6 Hz / run 2.4 Hz gait with heel→toe phases, counter-rotation, head stabilization.
-- `public/models/` is the slot for the real Fab asset. If `public/models/quantum-character.glb` (or FBX) exists, `src/character.js` auto-detects via `fetch HEAD` and swaps the procedural mesh for the Fab GLB at the same world position/yaw (locomotion still driven by `world.js`/`main.js`).
+- `src/character.js` keeps a procedural multicam tactical soldier **as the offline fallback**: plate carrier with mag pouches, multicam shirt/pants (canvas camo), helmet, knee pads, boots. 1.78 m rig, hips 0.90, walk 1.6 Hz / run 2.4 Hz gait with heel→toe phases, counter-rotation, head stabilization.
+- `public/models/` is the slot for the real Fab asset. If `public/models/survival_character.glb` exists, `src/character.js` auto-detects it via `fetch HEAD` and swaps the procedural mesh for the Rigged GLB at the same world position/yaw (locomotion still driven by `world.js`/`main.js`), grounds it to `terrainHeight`, normalises to ~1.78 m and re-attaches `sm_rifle.glb` on the back.
 
-## How to use the exact Fab asset (optional, not required for build)
+## How the exact Fab asset was converted (already done; re-run only to regenerate)
 
-Because Fab requires authentication, the repo cannot auto-download it via MCP alone. The **Spline MCP** pattern does not apply (Fab has no public API like Spline's 130-tool failure). Do this once:
+Because Fab requires authentication, the repo cannot auto-download it via MCP alone. Do this once:
 
 1. Open the link above while logged into Epic/Fab, click **Free → Add to My Library → Download** (choose FBX).
-2. Save as `public/models/quantum-character.fbx`
-3. Convert FBX → GLB (UE cm → m, preserves skeleton):
+2. Save as `public/models/survival_character.fbx` (9.4 MB — already in this repo).
+3. Convert FBX → GLB (UE cm → m, skeleton preserved, ~1.78 m, feet at y=0):
    ```sh
-   blender --background --python tools/fab_convert.py -- public/models/quantum-character.fbx public/models/quantum-character.glb
-   # or via Blender MCP: npx blender-mcp, then "import FBX … and export GLB"
+   blender --background --python tools/fbx2glb.py -- public/models/survival_character.fbx public/models/survival_character.glb
    ```
-4. `npm run dev` — the character will now be the Fab mesh (check console `[fab] loaded …`). Walk/strafe/joystick still work; the mesh is slaved to `group.position/rotation` from `main.js`.
+4. `npm run dev` — the character will now be the Fab mesh (check console `[fab] loaded /models/survival_character.glb`). Walk/strafe/joystick still work; the mesh is slaved to `group.position/rotation` from `main.js`.
 
 If the file is missing, the procedural tactical fallback is shown and no error is thrown.
 

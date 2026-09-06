@@ -235,13 +235,17 @@ The human never supplied geometry or textures; all meshes remain procedural. The
 Fab is auth-gated (Epic login, *Add to My Library*). `fab` npm is `@fab/cli` alias, not a Fab MCP; no `fab-mcp` exists. The repo provides a headless pipeline instead:
 
 ```sh
-# After downloading FREE sample from the Fab link:
-cp ~/Downloads/Quantum*.fbx public/models/quantum-character.fbx
-blender --background --python tools/fab_convert.py -- public/models/quantum-character.fbx public/models/quantum-character.glb
+# Full Modular-Survival character (already converted & shipped):
+ls -lh public/models/survival_character.{fbx,glb}      # 9.4 MB FBX → 13.6 MB GLB
+# Re-convert any FBX any time (requires Blender):
+blender --background --python tools/fbx2glb.py -- public/models/survival_character.fbx public/models/survival_character.glb
 npm run dev # auto-swaps procedural for GLB at same world position/yaw
 ```
 
-If the file is absent, the procedural tactical fallback shows; `fetch HEAD` 404 is silently ignored.
+The GLB is rigged (172 nodes), normalised to ~1.78 m with feet on `terrainHeight`, and
+`sm_rifle.glb` (same Fab sample) is re-attached on the character's back by `src/character.js`
+(the character FBX ships no weapon mesh). If the file is absent, the procedural tactical
+fallback shows; `fetch HEAD` 404 is silently ignored.
 
 All three MCPs are registered in `mcp.json` for `opencode`/`Claude Desktop`:
 
@@ -261,6 +265,7 @@ All three MCPs are registered in `mcp.json` for `opencode`/`Claude Desktop`:
 2. *Walkable explorer* (`d377468`) — third-person chase (`3.6 m` behind, `1.55 m` high), `terrainHeight` collision, gait blend.
 3. *Realistic human* (`3fab2a5`, 69 meshes) — 1.78 m, `fabricWeaveTexture`, eyes/iris, cargo shorts, backpack, biomechanical gait (walk 1.6 Hz double-support, run 2.4 Hz flight, pelvic ±6°/±9°, knee to 70°, head stabilization).
 4. *Fab tactical* (`53113b8`, 61 meshes) — multicam shirt/pants, plate carrier + mag pouches, helmet with NVG mount, knee pads; `group.userData.fabLink` set, optional GLB swap. `groundOff 0` verified, `npm run build` 300 ms (`GLTFLoader 44 kB` lazy).
+5. *Survival character* (current) — the real Fab **Modular-Survival** character: `public/models/survival_character.fbx` (9.4 MB) converted headless (Blender 5.1, `tools/fbx2glb.py`) → `survival_character.glb` (13.6 MB, 172-node UE rig + Jacket/Jeans/Hair/Shoes/Gloves/Backpack…). `src/character.js` auto-detects it, hides the procedural mesh, grounds it to `terrainHeight`, normalises to 1.78 m, and re-attaches `sm_rifle.glb` on the back. Automated checks (`tools/verify-survival.mjs`, `tools/backshot.mjs`): 178 cm, `groundOff 0`, rifle visible in chase view, zero `PAGEERROR`.
 
 Current `src/character.js:6` uses `fabricTex` canvas camo, `MeshStandardMaterial` with SSS emissive, and a `phase` gait:
 
@@ -315,11 +320,11 @@ Jungle-exploration/
 ├── SPLINE_MCP.md           Spline MCP (archived) setup
 ├── FAB_CHARACTER.md        Fab tactical pipeline + manual download steps
 ├── README.md               This file
-├── public/models/          (gitignored) slot for quantum-character.{fbx,glb}
+├── public/models/          survival_character.{fbx,glb} (Fab character) + sm_rifle.{fbx,glb}
 ├── src/
 │   ├── main.js             Walker, input (WASD+joystick), chase camera, sound, HUD
 │   ├── world.js            Terrain, trail, cliff, rocks/roots, scene assembly
-│   ├── character.js        Walkable tactical (or FBX GLB swap) + gait
+│   ├── character.js        Walkable character: survival GLB swap + procedural fallback
 │   ├── spline.js           Spline lazy loader
 │   ├── vegetation.js       10 species, L-system, leaf cards, scatter
 │   ├── lighting.js         Sun/hemi/godRays/dust
@@ -333,7 +338,10 @@ Jungle-exploration/
     ├── render-one.mjs        single-frame debug
     ├── test-mobile.mjs       mobile HUD/joystick check
     ├── inspect.mjs           camera walker walk check
-    └── fab_convert.py        Blender headless FBX→GLB
+    ├── verify-survival.mjs   GLB swap + grounding + height sanity (Playwright)
+    ├── backshot.mjs          rifle-on-back visibility check (Playwright)
+    ├── fbx2glb.py            Blender headless FBX→GLB (cm→m, 1.78 m norm)
+    └── fab_convert.py        legacy FBX→GLB (quantum-character sample)
 ```
 
 Ignored: `renders_s*/`, `eval_renders/`, `node_modules/`, `dist/`, `*.log`.
@@ -348,7 +356,7 @@ Ignored: `renders_s*/`, `eval_renders/`, `node_modules/`, `dist/`, `*.log`.
 
 - **Not photoreal**: icosahedron-cluster canopies read low-poly up close; stone is `BoxGeometry` without chamfer; leaf SSS is emissive fake (`0x4a7a30/0.95`); god rays are radial blur, not raymarched volumetric; water sheet is a scrolling plane.
 - **No wind / leaf sway** — only shader UV scroll.
-- **Fab asset** requires manual download (auth); procedural fallback is the default.
+- **Fab asset**: the survival character FBX required a manual download (auth); once converted it ships in this repo as `public/models/survival_character.glb` — no runtime download. Its embedded textures were not decodable by headless Blender 5.1 ("image has no size"), so body parts use flat material colours instead of the original maps.
 - **Spline** has no REST API — only ` @splinetool/runtime` Code API works.
 - **Push** requires GitHub credentials (none on this machine; see Handover).
 - **Zero tests** beyond harness.
