@@ -8,6 +8,8 @@
 [![MCP](https://img.shields.io/badge/MCP-Blender%20%7C%20Spline-blue)](./mcp.json)
 [![License](https://img.shields.io/badge/License-ISC-lightgrey)](./package.json)
 
+**Production: https://jungle-exploration.vercel.app/**
+
 <p align="center">
   <img src="renders/frame_0_0.00.png" width="32%" alt="Trailhead" />
   <img src="renders/frame_5_0.85.png" width="32%" alt="Ruins" />
@@ -49,6 +51,10 @@ The player follows a **single winding trail** — a closed loop where walking in
 The project was developed under the **Hermes Gauntlet** — a sequential, critic-gated autonomous loop — and later extended with walkable avatar and **MCP** (Model Context Protocol) integrations.
 
 ## Demo
+
+Live production build: **https://jungle-exploration.vercel.app/** (deploys from GitHub `master`).
+
+To run locally:
 
 ```sh
 npm install
